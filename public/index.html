@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Transcrevo Facil</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Transcricao de videos</p>
+          <h1>Transcrevo Facil</h1>
+          <p class="lead">Envie um video ou audio e transcreva localmente no seu computador, sem gastar tokens de API.</p>
+        </div>
+        <div class="status" id="apiStatus">Verificando configuracao...</div>
+      </section>
+
+      <section class="workspace">
+        <form id="transcribeForm" class="panel">
+          <label class="dropzone" for="media">
+            <input id="media" name="media" type="file" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,audio/*,video/*" required />
+            <span class="drop-title">Escolha ou arraste seu arquivo</span>
+            <span class="drop-subtitle" id="fileName">MP4, MP3, M4A, WAV ou WEBM ate 25 MB</span>
+          </label>
+
+          <div class="controls">
+            <label>
+              Tarefa
+              <select name="task">
+                <option value="transcribe">Transcrever no idioma original</option>
+                <option value="translate">Traduzir para ingles</option>
+              </select>
+            </label>
+            <label>
+              Idioma
+              <select name="language">
+                <option value="pt">Portugues</option>
+                <option value="en">Ingles</option>
+                <option value="es">Espanhol</option>
+                <option value="">Detectar automaticamente</option>
+              </select>
+            </label>
+          </div>
+
+          <button type="submit" id="submitButton">Transcrever agora</button>
+          <p class="hint">O processamento usa Whisper local. Videos grandes podem demorar, mas nao consomem creditos de IA.</p>
+        </form>
+
+        <section class="result" aria-live="polite">
+          <div class="result-head">
+            <div>
+              <p class="eyebrow">Resultado</p>
+              <h2>Sua transcricao aparece aqui</h2>
+            </div>
+            <div class="actions" id="actions"></div>
+          </div>
+          <pre id="output">Ainda nao ha transcricao.</pre>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
