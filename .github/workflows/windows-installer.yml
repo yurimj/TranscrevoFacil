@@ -3,8 +3,6 @@ name: Gerar instalador Windows
 on:
   workflow_dispatch:
   push:
-    branches:
-      - codex/public-release-hardening
     tags:
       - 'v*'
 
