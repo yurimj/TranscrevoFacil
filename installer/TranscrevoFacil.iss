@@ -64,9 +64,15 @@ Name: "{group}\TranscrevoFácil"; Filename: "powershell.exe"; Parameters: "-NoPr
 Name: "{autodesktop}\TranscrevoFácil"; Filename: "powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\public\transcrevofacil-logo.ico"; Tasks: desktopicon
 
 [UninstallDelete]
+; runtime, .env, licenses e logs sao gerados por install-runtime.ps1 depois da copia do Inno,
+; entao o desinstalador nao os conhece e precisa remove-los explicitamente. Dados do usuario
+; (uploads/transcricoes em {localappdata}\TranscrevoFacil\data) sao preservados de proposito.
 Type: filesandordirs; Name: "{app}\runtime"
 Type: filesandordirs; Name: "{app}\node_modules"
 Type: filesandordirs; Name: "{app}\installer-assets"
+Type: filesandordirs; Name: "{app}\licenses"
+Type: filesandordirs; Name: "{app}\logs"
+Type: files; Name: "{app}\.env"
 Type: filesandordirs; Name: "{localappdata}\TranscrevoFacil\logs"
 
 [Code]
@@ -88,6 +94,9 @@ begin
     ResultCode := -1;
     if (not Exec(PowerShellExe, Parameters, ExpandConstant('{app}'),
       SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
-      RaiseException('A preparacao dos runtimes falhou. A instalacao nao foi concluida. Codigo: ' + IntToStr(ResultCode));
+      RaiseException('A preparacao dos runtimes falhou. A instalacao nao foi concluida.' + #13#10#13#10 +
+        'Codigo: ' + IntToStr(ResultCode) + #13#10 +
+        'O motivo detalhado esta em:' + #13#10 +
+        ExpandConstant('{app}\logs\install-runtime.log'));
   end;
 end;

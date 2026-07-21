@@ -78,16 +78,52 @@ if (-not (Test-Path -LiteralPath $iscc)) {
   }
 }
 
+$cmake = $Dependencies.buildTools.cmake
+$cmakeArchive = Join-Path $BuildRoot $cmake.fileName
+$cmakeRoot = Join-Path $BuildRoot "CMake-$($cmake.version)"
+$cmakeExe = Join-Path $cmakeRoot 'bin\cmake.exe'
+Get-VerifiedDownload -Uri $cmake.url -Destination $cmakeArchive -ExpectedSha256 $cmake.sha256
+
+if (-not (Test-Path -LiteralPath $cmakeExe)) {
+  $cmakeExtract = Join-Path $BuildRoot 'cmake-extract'
+  if (Test-Path -LiteralPath $cmakeExtract) { [System.IO.Directory]::Delete($cmakeExtract, $true) }
+  if (Test-Path -LiteralPath $cmakeRoot) { [System.IO.Directory]::Delete($cmakeRoot, $true) }
+  Expand-Archive -LiteralPath $cmakeArchive -DestinationPath $cmakeExtract -Force
+  $cmakeSource = Get-ChildItem -LiteralPath $cmakeExtract -Directory | Select-Object -First 1
+  if (-not $cmakeSource) { throw 'O arquivo do CMake nao contem o diretorio esperado.' }
+  Move-Item -LiteralPath $cmakeSource.FullName -Destination $cmakeRoot
+  [System.IO.Directory]::Delete($cmakeExtract, $true)
+}
+if (-not (Test-Path -LiteralPath $cmakeExe)) { throw 'O CMake foi extraido, mas cmake.exe nao foi encontrado.' }
+
+$ninja = $Dependencies.buildTools.ninja
+$ninjaArchive = Join-Path $BuildRoot $ninja.fileName
+$ninjaRoot = Join-Path $BuildRoot "Ninja-$($ninja.version)"
+$ninjaExe = Join-Path $ninjaRoot 'ninja.exe'
+Get-VerifiedDownload -Uri $ninja.url -Destination $ninjaArchive -ExpectedSha256 $ninja.sha256
+
+if (-not (Test-Path -LiteralPath $ninjaExe)) {
+  if (Test-Path -LiteralPath $ninjaRoot) { [System.IO.Directory]::Delete($ninjaRoot, $true) }
+  Expand-Archive -LiteralPath $ninjaArchive -DestinationPath $ninjaRoot -Force
+}
+if (-not (Test-Path -LiteralPath $ninjaExe)) { throw 'O Ninja foi extraido, mas ninja.exe nao foi encontrado.' }
+
 $env:VULKAN_SDK = $vulkanRoot
 $env:ISCC_PATH = $iscc
-$env:PATH = "$(Join-Path $vulkanRoot 'Bin');$env:PATH"
+$env:CMAKE_PATH = $cmakeExe
+$env:NINJA_PATH = $ninjaExe
+$env:PATH = "$(Join-Path $vulkanRoot 'Bin');$(Split-Path $cmakeExe);$ninjaRoot;$env:PATH"
 
 if ($env:GITHUB_ENV) {
   "VULKAN_SDK=$vulkanRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
   "ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+  "CMAKE_PATH=$cmakeExe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+  "NINJA_PATH=$ninjaExe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 }
 if ($env:GITHUB_PATH) {
   (Join-Path $vulkanRoot 'Bin') | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+  (Split-Path $cmakeExe) | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+  $ninjaRoot | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 }
 
-Write-Host "Vulkan SDK $($vulkan.version) e Inno Setup $($inno.version) verificados."
+Write-Host "Vulkan SDK $($vulkan.version), Inno Setup $($inno.version), CMake $($cmake.version) e Ninja $($ninja.version) verificados."

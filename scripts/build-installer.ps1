@@ -13,7 +13,7 @@ try {
   Pop-Location
 }
 
-if (-not $env:VULKAN_SDK -or -not $env:ISCC_PATH) {
+if (-not $env:VULKAN_SDK -or -not $env:ISCC_PATH -or -not $env:CMAKE_PATH -or -not $env:NINJA_PATH) {
   & (Join-Path $PSScriptRoot 'install-build-tools.ps1')
   if ($LASTEXITCODE -ne 0) { throw 'A preparacao das ferramentas de build falhou.' }
 }

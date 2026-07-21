@@ -180,22 +180,85 @@ if (-not $WhisperCppSource) {
   if ($LASTEXITCODE -ne 0) { throw 'Falha ao obter os submodulos fixados do whisper.cpp.' }
 }
 
-$Cmake = Get-Command cmake -ErrorAction SilentlyContinue
-if (-not $Cmake) { throw 'CMake nao encontrado. Use o workflow windows-installer ou instale CMake na maquina de build.' }
+$CmakeExe = if ($env:CMAKE_PATH -and (Test-Path -LiteralPath $env:CMAKE_PATH)) {
+  $env:CMAKE_PATH
+} else {
+  $pinnedCmake = Join-Path $BuildRoot "CMake-$($Dependencies.buildTools.cmake.version)\bin\cmake.exe"
+  if (Test-Path -LiteralPath $pinnedCmake) {
+    $pinnedCmake
+  } else {
+    (Get-Command cmake -ErrorAction SilentlyContinue).Source
+  }
+}
+if (-not $CmakeExe) {
+  throw 'CMake nao encontrado. Rode scripts\install-build-tools.ps1 para baixar a versao fixada em installer\dependencies.json.'
+}
+
+$NinjaExe = if ($env:NINJA_PATH -and (Test-Path -LiteralPath $env:NINJA_PATH)) {
+  $env:NINJA_PATH
+} else {
+  $pinnedNinja = Join-Path $BuildRoot "Ninja-$($Dependencies.buildTools.ninja.version)\ninja.exe"
+  if (Test-Path -LiteralPath $pinnedNinja) { $pinnedNinja } else { (Get-Command ninja -ErrorAction SilentlyContinue).Source }
+}
+if (-not $NinjaExe) {
+  throw 'Ninja nao encontrado. Rode scripts\install-build-tools.ps1 para baixar a versao fixada em installer\dependencies.json.'
+}
 if (-not $env:VULKAN_SDK) { throw 'VULKAN_SDK nao configurado na maquina de build.' }
 
+# O gerador Ninja nao localiza o MSVC sozinho (o gerador Visual Studio localizava, mas aninhava
+# MSBuild dentro de MSBuild e quebrava o ExternalProject vulkan-shaders-gen). Importamos o ambiente
+# do vcvars64.bat para que cl.exe, INCLUDE e LIB fiquem disponiveis para o Ninja.
+$vsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+if (-not (Test-Path -LiteralPath $vsWhere)) {
+  throw 'vswhere.exe nao encontrado. Instale o Visual Studio 2022 (ou Build Tools) com o componente VC.Tools.x86.x64.'
+}
+$vsRoot = (& $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+if (-not $vsRoot) { throw 'Nenhuma instalacao do MSVC (VC.Tools.x86.x64) foi encontrada pelo vswhere.' }
+$VcVars = Join-Path $vsRoot.Trim() 'VC\Auxiliary\Build\vcvars64.bat'
+if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat nao encontrado em $VcVars." }
+Write-Host "Importando o ambiente MSVC de $VcVars"
+$vcEnvDump = cmd /c "`"$VcVars`" >nul 2>&1 && set"
+foreach ($vcLine in $vcEnvDump) {
+  if ($vcLine -match '^([^=]+)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+  }
+}
+if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+  throw 'cl.exe nao ficou disponivel apos importar o vcvars64.bat.'
+}
+
+Write-Host "Compilando o whisper.cpp com Vulkan (gerador Ninja) usando $CmakeExe"
 $whisperBuild = Join-Path $BuildRoot 'whisper-vulkan-build'
-& $Cmake.Source -S $WhisperCppSource -B $whisperBuild -DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
+Reset-Directory -Parent $BuildRoot -Path $whisperBuild
+& $CmakeExe -G Ninja -S $WhisperCppSource -B $whisperBuild "-DCMAKE_MAKE_PROGRAM=$NinjaExe" `
+  -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=Release `
+  -DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao configurar o whisper.cpp com Vulkan.' }
-& $Cmake.Source --build $whisperBuild --config Release --parallel 2
+& $CmakeExe --build $whisperBuild --parallel 2
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar o whisper.cpp com Vulkan.' }
 
-$whisperCli = Get-ChildItem -LiteralPath $whisperBuild -Recurse -Filter 'whisper-cli.exe' | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+$whisperCli = Get-ChildItem -LiteralPath $whisperBuild -Recurse -Filter 'whisper-cli.exe' | Select-Object -First 1
 if (-not $whisperCli) { throw 'whisper-cli.exe nao foi encontrado depois da compilacao Vulkan.' }
 Reset-Directory -Parent $AssetRoot -Path $VulkanRoot
 $binaryDirectory = $whisperCli.Directory.FullName
-Get-ChildItem -LiteralPath $binaryDirectory -File | Where-Object { $_.Extension -in '.exe', '.dll' } | Copy-Item -Destination $VulkanRoot -Force
+# O Ninja gera todos os executaveis do whisper.cpp em bin\ (bench, server, parakeet, quantize, vad...),
+# mas o TranscrevoFacil so invoca whisper-cli.exe. Copiamos apenas ele e as DLLs de runtime para nao
+# inflar o instalador com binarios que o produto nunca usa.
+Copy-Item -LiteralPath $whisperCli.FullName -Destination (Join-Path $VulkanRoot 'whisper-cli.exe') -Force
+Get-ChildItem -LiteralPath $binaryDirectory -File -Filter '*.dll' | Copy-Item -Destination $VulkanRoot -Force
 Copy-Item -LiteralPath (Join-Path $WhisperCppSource 'LICENSE') -Destination (Join-Path $LicenseRoot 'whisper.cpp-LICENSE') -Force
+
+# Executa o binario copiado: um DLL nativo ausente so aparece no carregamento, nunca na lista de arquivos.
+# O whisper-cli.exe imprime a lista de dispositivos Vulkan no stderr; sob ErrorActionPreference='Stop'
+# o operador 2>&1 transformaria essa saida normal em erro terminante, entao suspendemos o Stop so aqui.
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& (Join-Path $VulkanRoot 'whisper-cli.exe') --help 2>&1 | Out-Null
+$whisperCliExit = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorAction
+if ($whisperCliExit -ne 0) {
+  throw "O whisper-cli.exe copiado nao executou (codigo $whisperCliExit). Provavelmente falta um DLL ao lado do executavel."
+}
 
 Copy-Item -LiteralPath $DependencyFile -Destination (Join-Path $AssetRoot 'dependencies.json') -Force
 Copy-Item -LiteralPath $RequirementsLock -Destination (Join-Path $WheelRoot 'requirements.lock') -Force
@@ -215,6 +278,25 @@ $provenance = [ordered]@{
   cudaRequirementsSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $CudaRequirementsLock).Hash.ToLowerInvariant()
 }
 [System.IO.File]::WriteAllText((Join-Path $AssetRoot 'build-provenance.json'), ($provenance | ConvertTo-Json -Depth 12), [System.Text.UTF8Encoding]::new($false))
+
+# O manifesto e gerado enumerando o que existe, entao um componente que sumiu do build produz
+# um manifesto valido e autoconsistente. Este gate compara a arvore com a lista declarada em
+# dependencies.json para que a falha aconteca aqui, e nao na maquina do usuario final.
+if (-not $Dependencies.requiredAssets) {
+  throw 'installer\dependencies.json nao declara requiredAssets.'
+}
+$missingAssets = foreach ($requiredAsset in $Dependencies.requiredAssets) {
+  $requiredPath = Join-Path $AssetRoot $requiredAsset
+  Assert-ChildPath -Parent $AssetRoot -Child $requiredPath
+  if (-not (Test-Path -LiteralPath $requiredPath)) {
+    $requiredAsset
+  } elseif ((Get-Item -LiteralPath $requiredPath).Length -eq 0) {
+    "$requiredAsset (arquivo vazio)"
+  }
+}
+if ($missingAssets) {
+  throw "O pacote do instalador esta incompleto e nao pode ser publicado. Ausentes: $($missingAssets -join ', ')"
+}
 
 $manifestItems = Get-ChildItem -LiteralPath $AssetRoot -Recurse -File | Where-Object { $_.Name -notin 'manifest.sha256', 'README.md' }
 $manifestLines = foreach ($item in $manifestItems) {

@@ -79,6 +79,22 @@ try {
   if ($installerText -notmatch '\[Code\]' -or $installerText -notmatch 'RaiseException') {
     throw 'O instalador deve abortar quando a preparacao dos runtimes falhar.'
   }
+  foreach ($criticalAsset in @('whisper-vulkan\whisper-cli.exe', 'models\ggml-small.bin', 'ffmpeg\ffmpeg.exe')) {
+    if ($dependencies.requiredAssets -notcontains $criticalAsset) {
+      throw "requiredAssets deve declarar o runtime obrigatorio $criticalAsset."
+    }
+  }
+  $assetPreparation = Get-Content -Raw -LiteralPath 'scripts\prepare-installer-assets.ps1'
+  if ($assetPreparation -notmatch 'requiredAssets') {
+    throw 'A preparacao de assets deve validar requiredAssets antes de gerar o manifesto.'
+  }
+  if ($runtimeInstaller -notmatch 'requiredAssets') {
+    throw 'O install-runtime deve validar requiredAssets antes de preparar os runtimes.'
+  }
+  if (-not $dependencies.buildTools.cmake.sha256) {
+    throw 'O CMake usado no build deve estar fixado com hash em dependencies.json.'
+  }
+
   $reviewDate = [DateTime]::ParseExact($dependencies.reviewedAt, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
   if (([DateTime]::UtcNow.Date - $reviewDate.Date).TotalDays -gt 120) {
     throw 'A revisao das dependencias do instalador tem mais de 120 dias.'

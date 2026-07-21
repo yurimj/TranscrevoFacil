@@ -4,6 +4,28 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$LogRoot = Join-Path $InstallRoot 'logs'
+$LogPath = Join-Path $LogRoot 'install-runtime.log'
+New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+
+# O Inno executa este script com SW_HIDE e so mostra o codigo de saida, entao sem transcricao
+# qualquer falha aqui chega ao usuario como "Codigo: 1" sem nenhuma pista do motivo.
+try { Start-Transcript -LiteralPath $LogPath -Force | Out-Null } catch { }
+
+trap {
+  # Stop-Transcript primeiro: enquanto a transcricao esta ativa ela mantem o arquivo aberto,
+  # e o append da mensagem falharia em silencio justamente no caso que precisamos registrar.
+  $failure = $_
+  try { Stop-Transcript | Out-Null } catch { }
+  try {
+    [System.IO.File]::AppendAllText(
+      $LogPath,
+      "$(Get-Date -Format o) FALHA: $($failure.Exception.Message)`r`n",
+      [System.Text.UTF8Encoding]::new($false))
+  } catch { }
+  exit 1
+}
+
 $RuntimeRoot = Join-Path $InstallRoot 'runtime'
 $PythonRoot = Join-Path $RuntimeRoot 'python'
 $NodeRoot = Join-Path $RuntimeRoot 'node'
@@ -77,6 +99,22 @@ Assert-File (Join-Path $WheelRoot 'requirements.lock') 'Lock de pacotes Python'
 Assert-File $CudaRequirementsLock 'Lock do pacote NVIDIA opcional'
 Assert-File $AssetManifest 'Manifesto de integridade'
 
+# O manifesto so prova que os arquivos presentes estao integros; ele nao percebe um componente
+# que nunca foi empacotado. A lista declarada cobre essa lacuna antes do trabalho pesado comecar.
+if (-not $Dependencies.requiredAssets) {
+  throw 'O pacote do instalador nao declara requiredAssets. Baixe novamente o instalador do TranscrevoFacil.'
+}
+$missingAssets = foreach ($requiredAsset in $Dependencies.requiredAssets) {
+  $requiredPath = Join-Path $AssetRoot $requiredAsset
+  Assert-ChildPath -Parent $AssetRoot -Child $requiredPath
+  if (-not (Test-Path -LiteralPath $requiredPath)) { $requiredAsset }
+}
+if ($missingAssets) {
+  throw ("Este instalador foi gerado incompleto e nao pode preparar o TranscrevoFacil. " +
+    "Componentes ausentes: $($missingAssets -join ', '). " +
+    "Baixe novamente o instalador; se o erro persistir, relate em https://github.com/yurimj/TranscrevoFacil/issues.")
+}
+
 foreach ($line in Get-Content -LiteralPath $AssetManifest) {
   if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw "Linha invalida no manifesto de integridade: $line" }
   $expectedHash = $Matches[1]
@@ -93,9 +131,6 @@ New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
 $VulkanSource = Join-Path $AssetRoot 'whisper-vulkan'
 $ModelsSource = Join-Path $AssetRoot 'models'
 $FfmpegSource = Join-Path $AssetRoot 'ffmpeg\ffmpeg.exe'
-if (-not (Test-Path -LiteralPath (Join-Path $VulkanSource 'whisper-cli.exe'))) { throw 'Runtime Vulkan ausente no instalador.' }
-if (-not (Test-Path -LiteralPath (Join-Path $ModelsSource 'ggml-small.bin'))) { throw 'Modelo Vulkan ausente no instalador.' }
-if (-not (Test-Path -LiteralPath $FfmpegSource)) { throw 'FFmpeg ausente no instalador.' }
 New-Item -ItemType Directory -Force -Path (Join-Path $RuntimeRoot 'whisper-vulkan'), (Join-Path $RuntimeRoot 'models'), (Join-Path $RuntimeRoot 'ffmpeg') | Out-Null
 Copy-Item -Path (Join-Path $VulkanSource '*') -Destination (Join-Path $RuntimeRoot 'whisper-vulkan') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ModelsSource 'ggml-small.bin') -Destination (Join-Path $RuntimeRoot 'models\ggml-small.bin') -Force
@@ -226,3 +261,6 @@ Assert-ChildPath -Parent $InstallRoot -Child $AssetRoot
 if (Test-Path -LiteralPath $AssetRoot) {
   [System.IO.Directory]::Delete([System.IO.Path]::GetFullPath($AssetRoot), $true)
 }
+
+Write-Host 'Runtimes do TranscrevoFacil preparados com sucesso.'
+try { Stop-Transcript | Out-Null } catch { }

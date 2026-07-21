@@ -23,8 +23,10 @@ if ($setup.ExitCode -ne 0) {
 $NodeExe = Join-Path $InstallRoot 'runtime\node\node.exe'
 $PythonExe = Join-Path $InstallRoot 'runtime\python\python.exe'
 $FfmpegExe = Join-Path $InstallRoot 'runtime\ffmpeg\ffmpeg.exe'
+$WhisperCppExe = Join-Path $InstallRoot 'runtime\whisper-vulkan\whisper-cli.exe'
+$GgmlModel = Join-Path $InstallRoot 'runtime\models\ggml-small.bin'
 $EnvFile = Join-Path $InstallRoot '.env'
-foreach ($required in $NodeExe, $PythonExe, $FfmpegExe, $EnvFile) {
+foreach ($required in $NodeExe, $PythonExe, $FfmpegExe, $WhisperCppExe, $GgmlModel, $EnvFile) {
   if (-not (Test-Path -LiteralPath $required)) { throw "Arquivo instalado ausente: $required" }
 }
 
@@ -42,6 +44,12 @@ $env:PORT = [string]$TestPort
 if ($LASTEXITCODE -ne 0) { throw 'O runtime Python instalado nao importou Whisper/CTranslate2.' }
 & $FfmpegExe -hide_banner -version | Select-Object -First 1
 if ($LASTEXITCODE -ne 0) { throw 'O FFmpeg instalado nao iniciou.' }
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $WhisperCppExe --help 2>&1 | Out-Null
+$whisperCliExit = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorAction
+if ($whisperCliExit -ne 0) { throw 'O runtime Vulkan instalado (whisper-cli.exe) nao iniciou.' }
 
 $LogRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
 $stdoutLog = Join-Path $LogRoot 'transcrevofacil-smoke-output.log'
