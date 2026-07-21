@@ -93,7 +93,7 @@ try {
 
   $serverText = Get-Content -Raw -LiteralPath 'server.js'
   if ($serverText -notmatch 'app\.listen\(port, host,') { throw 'O servidor nao esta explicitamente limitado ao host validado.' }
-  if ((Get-Content -Raw -LiteralPath '.env.example') -notmatch '(?m)^HOST=127\.0\.0\.1$') {
+  if ((Get-Content -Raw -LiteralPath '.env.example') -notmatch '(?m)^HOST=127\.0\.0\.1\r?$') {
     throw '.env.example deve limitar HOST a 127.0.0.1.'
   }
   $installerWorkflow = Get-Content -Raw -LiteralPath '.github\workflows\windows-installer.yml'
