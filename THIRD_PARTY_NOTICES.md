@@ -31,6 +31,6 @@ Ao publicar o instalador em uma release, mantenha esses links, os textos extraí
 
 ## NVIDIA
 
-As bibliotecas NVIDIA são instaladas como runtimes proprietários separados para uso em GPUs NVIDIA. A redistribuição deve seguir integralmente a licença da NVIDIA, manter os avisos proprietários e não declarar patrocínio ou endosso da NVIDIA.
+As bibliotecas NVIDIA são runtimes proprietários separados. Quando uma GPU NVIDIA é detectada, o instalador baixa automaticamente os wheels fixados e autenticados do PyPI, extrai seus avisos de licença e instala CUDA/cuDNN sem intervenção manual. A redistribuição deve seguir integralmente a licença da NVIDIA, manter os avisos proprietários e não declarar patrocínio ou endosso da NVIDIA.
 
 Este arquivo é informativo e não substitui os textos integrais das licenças. Antes de cada release pública, execute a revisão prevista em `premissas.md`.

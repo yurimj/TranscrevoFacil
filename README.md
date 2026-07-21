@@ -15,7 +15,7 @@ Transcrição local de áudio e vídeo com Whisper, sem consumir créditos de AP
 
 ## Instalação para usuário final
 
-O usuário final deve receber `TranscrevoFacil-Setup-<versão>.exe` a partir de uma release oficial. O instalador configura Node.js, Python, FFmpeg, Whisper, CUDA/cuDNN, Vulkan e os modelos necessários. O atalho verifica os runtimes, escolhe uma porta local livre, inicia o servidor e abre o navegador.
+O usuário final deve receber `TranscrevoFacil-Setup-<versão>.exe` a partir de uma release oficial. O instalador configura Node.js, Python, FFmpeg, Whisper, Vulkan e os modelos necessários. Quando detecta uma GPU NVIDIA, ele baixa e instala automaticamente o pacote CUDA/cuDNN fixado por versão e SHA-256; se a rede ou a GPU falhar, o aplicativo continua pela CPU. O atalho verifica os runtimes, escolhe uma porta local livre, inicia o servidor e abre o navegador.
 
 O servidor aceita conexões somente de `localhost`. Na instalação final, dados e transcrições ficam em `%LOCALAPPDATA%\TranscrevoFacil\data` e não são removidos silenciosamente na desinstalação.
 
@@ -70,7 +70,7 @@ CPU e CUDA usam `float32`. O backend Vulkan usa um modelo GGML equivalente e pod
 
 ## Instalador
 
-O manifesto [`installer/dependencies.json`](installer/dependencies.json) fixa versões, origens e hashes. Os pacotes Python e CUDA também são fixados transitivamente em [`installer/python-requirements.lock`](installer/python-requirements.lock).
+O manifesto [`installer/dependencies.json`](installer/dependencies.json) fixa versões, origens e hashes. Os pacotes Python são fixados transitivamente em [`installer/python-requirements.lock`](installer/python-requirements.lock). O pacote NVIDIA opcional usa o lock separado [`installer/python-requirements-cuda.lock`](installer/python-requirements-cuda.lock), evitando adicionar mais de 1 GB a computadores AMD, Intel ou sem GPU.
 
 Para gerar o instalador em uma máquina Windows:
 

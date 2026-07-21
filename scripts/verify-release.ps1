@@ -10,6 +10,7 @@ try {
     'premissas.md',
     'installer\dependencies.json',
     'installer\python-requirements.lock',
+    'installer\python-requirements-cuda.lock',
     'scripts\test-installed-release.ps1',
     '.github\dependabot.yml',
     '.github\workflows\ci.yml',
@@ -61,7 +62,7 @@ try {
   if ($installerText -notmatch [regex]::Escape("#define MyAppVersion `"$($package.version)`"")) {
     throw 'A versao do instalador difere da versao do package.json.'
   }
-  foreach ($requiredInstallerFile in @('LICENSE', 'SECURITY.md', 'dependencies.json', 'python-requirements.lock')) {
+  foreach ($requiredInstallerFile in @('LICENSE', 'SECURITY.md', 'dependencies.json', 'python-requirements.lock', 'python-requirements-cuda.lock')) {
     if ($installerText -notmatch [regex]::Escape($requiredInstallerFile)) {
       throw "O instalador nao inclui $requiredInstallerFile."
     }
@@ -78,6 +79,17 @@ try {
   if ($hashValues.Count -lt 8) { throw 'O manifesto de dependencias nao contem todos os hashes esperados.' }
   foreach ($match in $hashValues) {
     if ($match.Groups[1].Value.Length -ne 64) { throw "SHA-256 invalido: $($match.Groups[1].Value)" }
+  }
+
+  $baseRequirements = Get-Content -Raw -LiteralPath 'installer\python-requirements.lock'
+  $cudaRequirements = Get-Content -Raw -LiteralPath 'installer\python-requirements-cuda.lock'
+  if ($baseRequirements -match '(?im)^nvidia-') {
+    throw 'Pacotes NVIDIA nao devem inflar o instalador-base.'
+  }
+  foreach ($requiredCudaPackage in @('nvidia-cublas-cu12', 'nvidia-cuda-nvrtc-cu12', 'nvidia-cudnn-cu12')) {
+    if ($cudaRequirements -notmatch "(?m)^$([regex]::Escape($requiredCudaPackage))==") {
+      throw "Pacote CUDA obrigatorio ausente do lock opcional: $requiredCudaPackage"
+    }
   }
 
   $workflowFiles = Get-ChildItem -LiteralPath '.github\workflows' -Filter '*.yml'

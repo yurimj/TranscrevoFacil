@@ -17,6 +17,11 @@ test('usa Vulkan para Intel', () => {
   assert.equal(selectGpuBackend({ adapters, cudaAvailable: false, vulkanAvailable: true }).device, 'vulkan');
 });
 
+test('usa Vulkan para NVIDIA quando CUDA nao esta pronta', () => {
+  const adapters = parseGpuAdapters(JSON.stringify({ Name: 'NVIDIA GeForce GTX 1050', AdapterRAM: 2147483648 }));
+  assert.equal(selectGpuBackend({ adapters, cudaAvailable: false, vulkanAvailable: true }).device, 'vulkan');
+});
+
 test('mantem CPU quando o runtime da GPU nao existe', () => {
   const adapters = parseGpuAdapters(JSON.stringify({ Name: 'AMD Radeon Graphics' }));
   const result = selectGpuBackend({ adapters, cudaAvailable: false, vulkanAvailable: false });

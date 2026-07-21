@@ -47,6 +47,7 @@ Source: "..\premissas.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dependencies.json"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "python-requirements.lock"; DestDir: "{app}\installer"; Flags: ignoreversion
+Source: "python-requirements-cuda.lock"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\public\*"; DestDir: "{app}\public"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\scripts\install-runtime.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\scripts\start-transcrevofacil.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion

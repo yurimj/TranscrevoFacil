@@ -9,6 +9,7 @@ $PythonRoot = Join-Path $RuntimeRoot 'python'
 $NodeRoot = Join-Path $RuntimeRoot 'node'
 $WheelRoot = Join-Path $AssetRoot 'python-wheels'
 $DependencyFile = Join-Path $InstallRoot 'installer\dependencies.json'
+$CudaRequirementsLock = Join-Path $InstallRoot 'installer\python-requirements-cuda.lock'
 $Dependencies = Get-Content -Raw -LiteralPath $DependencyFile | ConvertFrom-Json
 $PythonInstaller = Join-Path $AssetRoot $Dependencies.python.fileName
 $NodeArchive = Join-Path $AssetRoot $Dependencies.node.fileName
@@ -41,10 +42,39 @@ function Add-UserPath {
   }
 }
 
+function Test-NvidiaAdapter {
+  try {
+    return [bool](Get-CimInstance Win32_VideoController -ErrorAction Stop | Where-Object { $_.Name -match '(?i)NVIDIA' } | Select-Object -First 1)
+  } catch {
+    return $false
+  }
+}
+
+function Copy-WheelLicenseFiles {
+  param([string]$WheelDirectory, [string]$Destination)
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+  foreach ($wheel in Get-ChildItem -LiteralPath $WheelDirectory -Filter '*.whl') {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($wheel.FullName)
+    try {
+      foreach ($entry in $zip.Entries) {
+        if ($entry.Name -and $entry.FullName -match '(?i)(^|/)(LICENSE[^/]*|COPYING[^/]*|NOTICE[^/]*)$') {
+          $safeName = ($entry.FullName -replace '[^A-Za-z0-9._-]', '_')
+          $target = Join-Path $Destination "$($wheel.BaseName)-$safeName"
+          [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+        }
+      }
+    } finally {
+      $zip.Dispose()
+    }
+  }
+}
+
 Assert-File $PythonInstaller 'Instalador do Python'
 Assert-File $NodeArchive 'Runtime Node.js'
 Assert-File $VcRedist 'Microsoft Visual C++ Runtime'
 Assert-File (Join-Path $WheelRoot 'requirements.lock') 'Lock de pacotes Python'
+Assert-File $CudaRequirementsLock 'Lock do pacote NVIDIA opcional'
 Assert-File $AssetManifest 'Manifesto de integridade'
 
 foreach ($line in Get-Content -LiteralPath $AssetManifest) {
@@ -104,6 +134,8 @@ if (-not (Test-Path -LiteralPath $PythonExe)) {
 $NodeExe = Join-Path $NodeRoot 'node.exe'
 if (-not (Test-Path -LiteralPath $NodeExe)) {
   $nodeTemporary = Join-Path $RuntimeRoot 'node-extract'
+  Assert-ChildPath -Parent $RuntimeRoot -Child $nodeTemporary
+  Assert-ChildPath -Parent $RuntimeRoot -Child $NodeRoot
   if (Test-Path -LiteralPath $nodeTemporary) { [System.IO.Directory]::Delete($nodeTemporary, $true) }
   Expand-Archive -LiteralPath $NodeArchive -DestinationPath $nodeTemporary -Force
   $nodeSource = Get-ChildItem -LiteralPath $nodeTemporary -Directory | Select-Object -First 1
@@ -113,10 +145,40 @@ if (-not (Test-Path -LiteralPath $NodeExe)) {
 if (-not (Test-Path -LiteralPath $NodeExe)) { throw 'O runtime Node.js foi extraido, mas node.exe nao foi encontrado.' }
 
 & $PythonExe -m pip install --no-index --find-links $WheelRoot --require-hashes --upgrade -r (Join-Path $WheelRoot 'requirements.lock')
-if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel instalar o Whisper e os runtimes CUDA locais.' }
+if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel instalar o Whisper e as dependencias Python locais.' }
 
 & $PythonExe -c 'import ctranslate2, faster_whisper; print(ctranslate2.__version__)'
 if ($LASTEXITCODE -ne 0) { throw 'A validacao do faster-whisper/CTranslate2 falhou.' }
+
+$NvidiaDetected = Test-NvidiaAdapter
+$CudaPackageStatus = if ($NvidiaDetected) { 'pending' } else { 'not-required' }
+$CudaErrorLog = Join-Path $RuntimeRoot 'cuda-install-error.log'
+if ($NvidiaDetected) {
+  $CudaWheelRoot = Join-Path $RuntimeRoot 'cuda-wheels'
+  Assert-ChildPath -Parent $RuntimeRoot -Child $CudaWheelRoot
+  if (Test-Path -LiteralPath $CudaWheelRoot) { [System.IO.Directory]::Delete($CudaWheelRoot, $true) }
+  New-Item -ItemType Directory -Force -Path $CudaWheelRoot | Out-Null
+  try {
+    Write-Host 'GPU NVIDIA detectada. Baixando automaticamente CUDA/cuDNN verificados...'
+    & $PythonExe -m pip download --disable-pip-version-check --only-binary=:all: --require-hashes `
+      --index-url 'https://pypi.org/simple' --dest $CudaWheelRoot -r $CudaRequirementsLock
+    if ($LASTEXITCODE -ne 0) { throw "O download do pacote NVIDIA falhou com codigo $LASTEXITCODE." }
+
+    Copy-WheelLicenseFiles -WheelDirectory $CudaWheelRoot -Destination (Join-Path $InstallRoot 'licenses\nvidia')
+    & $PythonExe -m pip install --disable-pip-version-check --no-index --find-links $CudaWheelRoot `
+      --require-hashes --upgrade -r $CudaRequirementsLock
+    if ($LASTEXITCODE -ne 0) { throw "A instalacao do pacote NVIDIA falhou com codigo $LASTEXITCODE." }
+
+    $CudaPackageStatus = 'installed'
+    if (Test-Path -LiteralPath $CudaErrorLog) { Remove-Item -LiteralPath $CudaErrorLog -Force }
+  } catch {
+    $CudaPackageStatus = 'cpu-fallback'
+    [System.IO.File]::WriteAllText($CudaErrorLog, $_.Exception.Message, [System.Text.UTF8Encoding]::new($false))
+    Write-Warning 'A aceleracao NVIDIA nao foi instalada. O TranscrevoFacil continuara funcionando pela CPU.'
+  } finally {
+    if (Test-Path -LiteralPath $CudaWheelRoot) { [System.IO.Directory]::Delete($CudaWheelRoot, $true) }
+  }
+}
 
 $FfmpegDirectory = Join-Path $RuntimeRoot 'ffmpeg'
 Add-UserPath (Split-Path $PythonExe)
@@ -157,6 +219,8 @@ $manifest = [ordered]@{
   whisperCpp = $WhisperCppExe
   fasterWhisperModel = $FasterWhisperModel
   dependenciesReviewedAt = $Dependencies.reviewedAt
+  nvidiaDetected = $NvidiaDetected
+  cudaPackageStatus = $CudaPackageStatus
 }
 [System.IO.File]::WriteAllText((Join-Path $RuntimeRoot 'installed.json'), ($manifest | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
 

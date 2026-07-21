@@ -1,0 +1,5 @@
+# Pacote opcional NVIDIA para CPython 3.13 x64 no Windows.
+# O instalador baixa automaticamente estes arquivos, com hash, somente quando detecta uma GPU NVIDIA.
+nvidia-cublas-cu12==12.9.2.10 --hash=sha256:623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661
+nvidia-cuda-nvrtc-cu12==12.9.86 --hash=sha256:72972ebdcf504d69462d3bcd67e7b81edd25d0fb85a2c46d3ea3517666636349
+nvidia-cudnn-cu12==9.25.0.15 --hash=sha256:7987acb3cc5b793151e64c05a12a3625f5a8d4cfabe87eea3a65f0676ef2da67

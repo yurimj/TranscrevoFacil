@@ -59,6 +59,16 @@ jobs:
         shell: powershell
         run: '& $env:ISCC_PATH installer\TranscrevoFacil.iss'
 
+      - name: Validar tamanho para GitHub Release
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem dist-installer\TranscrevoFacil-Setup-*.exe | Select-Object -First 1
+          $maximumReleaseBytes = 2GB
+          if ($installer.Length -ge $maximumReleaseBytes) {
+            throw "O instalador tem $($installer.Length) bytes e excede o limite de 2 GiB por arquivo do GitHub Releases."
+          }
+          Write-Host "Instalador publicavel: $([math]::Round($installer.Length / 1GB, 2)) GiB."
+
       - name: Testar instalação limpa
         shell: powershell
         run: |

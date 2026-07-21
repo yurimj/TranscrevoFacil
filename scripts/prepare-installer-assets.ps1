@@ -15,6 +15,7 @@ $LicenseRoot = Join-Path $AssetRoot 'licenses'
 $BuildRoot = Join-Path $AppRoot '.installer-build'
 $DependencyFile = Join-Path $AppRoot 'installer\dependencies.json'
 $RequirementsLock = Join-Path $AppRoot 'installer\python-requirements.lock'
+$CudaRequirementsLock = Join-Path $AppRoot 'installer\python-requirements-cuda.lock'
 $Dependencies = Get-Content -Raw -LiteralPath $DependencyFile | ConvertFrom-Json
 
 function Assert-ChildPath {
@@ -113,6 +114,13 @@ if (-not $SkipDownloads) {
   & $PythonCommand -m pip download --only-binary=:all: --require-hashes --dest $WheelRoot -r $RequirementsLock
   if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar os pacotes Python bloqueados por hash.' }
 
+  $cudaAuditRoot = Join-Path $BuildRoot 'cuda-wheels-audit'
+  Reset-Directory -Parent $BuildRoot -Path $cudaAuditRoot
+  & $PythonCommand -m pip download --only-binary=:all: --require-hashes --dest $cudaAuditRoot -r $CudaRequirementsLock
+  if ($LASTEXITCODE -ne 0) { throw 'Falha ao validar o pacote NVIDIA opcional bloqueado por hash.' }
+  Assert-ChildPath -Parent $BuildRoot -Child $cudaAuditRoot
+  [System.IO.Directory]::Delete([System.IO.Path]::GetFullPath($cudaAuditRoot), $true)
+
   $ggmlModel = Join-Path $ModelRoot $Dependencies.ggmlModel.fileName
   $ggmlUrl = "https://huggingface.co/$($Dependencies.ggmlModel.repository)/resolve/$($Dependencies.ggmlModel.revision)/$($Dependencies.ggmlModel.fileName)?download=true"
   Get-VerifiedDownload -Uri $ggmlUrl -Destination $ggmlModel -ExpectedSha256 $Dependencies.ggmlModel.sha256
@@ -199,6 +207,8 @@ $provenance = [ordered]@{
   generatedAt = (Get-Date).ToUniversalTime().ToString('o')
   dependencies = $Dependencies
   whisperCppCommit = (& git -C $WhisperCppSource rev-parse HEAD).Trim()
+  baseRequirementsSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $RequirementsLock).Hash.ToLowerInvariant()
+  cudaRequirementsSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $CudaRequirementsLock).Hash.ToLowerInvariant()
 }
 [System.IO.File]::WriteAllText((Join-Path $AssetRoot 'build-provenance.json'), ($provenance | ConvertTo-Json -Depth 12), [System.Text.UTF8Encoding]::new($false))
 

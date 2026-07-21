@@ -14,7 +14,7 @@ O instalador deve instalar ou empacotar absolutamente tudo que um usuario leigo 
 - Python, pip, ambiente Python e faster-whisper;
 - CTranslate2 e o modelo Whisper utilizado pelo aplicativo;
 - FFmpeg;
-- runtimes NVIDIA CUDA, cuBLAS e cuDNN necessarios, sem exigir o CUDA Toolkit completo quando as DLLs redistribuiveis forem suficientes;
+- runtimes NVIDIA CUDA, cuBLAS e cuDNN necessarios, baixados e validados automaticamente apenas quando uma GPU NVIDIA for detectada, sem exigir o CUDA Toolkit completo;
 - runtime Vulkan, whisper.cpp e modelo GGML para GPUs AMD e Intel;
 - Microsoft Visual C++ Runtime e qualquer outra DLL nativa exigida pelos executaveis;
 - entradas de PATH necessarias, sem depender exclusivamente do PATH para iniciar o aplicativo;
@@ -22,7 +22,7 @@ O instalador deve instalar ou empacotar absolutamente tudo que um usuario leigo 
 
 Downloads feitos pelo instalador devem ser automaticos, silenciosos, provenientes de fontes oficiais, ter versao fixada e validacao de integridade. Uma falha deve exibir uma mensagem compreensivel e oferecer reparo; nunca deve mandar o usuario instalar manualmente uma dependencia.
 
-As versoes, origens e hashes aprovados devem ficar centralizados em `installer/dependencies.json`. Pacotes Python devem usar um lock completo com hashes de dependencias transitivas. Downloads, Actions e ferramentas de build nao podem depender apenas de tags, URLs ou versoes mutaveis. A revisao desse manifesto vence depois de 120 dias e deve ser renovada antes de qualquer release.
+As versoes, origens e hashes aprovados devem ficar centralizados em `installer/dependencies.json`. Pacotes Python devem usar locks completos com hashes de dependencias transitivas, incluindo um lock separado para o pacote NVIDIA opcional. Downloads, Actions e ferramentas de build nao podem depender apenas de tags, URLs ou versoes mutaveis. A revisao desse manifesto vence depois de 120 dias e deve ser renovada antes de qualquer release.
 
 O instalador publico deve ser assinado com certificado Authenticode confiavel e timestamp. Builds de teste podem ser unsigned, mas nunca devem ser apresentados como release final.
 
