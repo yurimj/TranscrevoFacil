@@ -1,0 +1,9 @@
+# Componentes de distribuição e segurança exigem revisão do mantenedor.
+/.github/ @yurimj
+/installer/ @yurimj
+/scripts/install-runtime.ps1 @yurimj
+/scripts/prepare-installer-assets.ps1 @yurimj
+/scripts/start-transcrevofacil.ps1 @yurimj
+/server.js @yurimj
+/SECURITY.md @yurimj
+/THIRD_PARTY_NOTICES.md @yurimj

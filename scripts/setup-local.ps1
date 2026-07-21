@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-Write-Host "Configurando Transcrevo Facil para transcricao local..."
+Write-Host "Configurando TranscrevoFácil para transcricao local..."
 
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) {
@@ -16,7 +16,11 @@ if (-not $python) {
 }
 
 & $pythonExe -m pip install --upgrade pip
-& $pythonExe -m pip install faster-whisper
+$requirementsLock = Join-Path $PSScriptRoot '..\installer\python-requirements.lock'
+& $pythonExe -m pip install --require-hashes -r $requirementsLock
+if ($LASTEXITCODE -ne 0) {
+  throw 'A instalacao das dependencias Python verificadas falhou.'
+}
 
 if (-not (Test-Path ".env")) {
   Copy-Item ".env.example" ".env"
@@ -26,4 +30,4 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
   Write-Host "Aviso: ffmpeg.exe nao esta no PATH. O faster-whisper usa PyAV e deve funcionar para muitos videos mesmo assim."
 }
 
-Write-Host "Pronto. Agora rode: npm install; npm run dev"
+Write-Host "Pronto. Agora rode: pnpm install; pnpm run dev"

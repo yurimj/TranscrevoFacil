@@ -1,72 +1,89 @@
-# Transcrevo Facil
+# TranscrevoFácil
 
-Aplicativo local para transcrever videos e audios sem consumir tokens ou creditos de API. A transcricao roda no seu computador com Whisper local via `faster-whisper`.
+Transcrição local de áudio e vídeo com Whisper, sem consumir créditos de API. O processamento e os arquivos permanecem no computador do usuário.
 
-## Como rodar
+## Recursos
 
-1. Instale o Node.js 20 ou superior.
-2. Instale Python 3.10 ou superior.
-3. Instale o ffmpeg e deixe o comando `ffmpeg` disponivel no terminal.
-4. Rode o instalador local:
+- transcrição e tradução local;
+- exportação em TXT, JSON e SRT;
+- extração de frames para thumbnails;
+- NVIDIA por CUDA;
+- AMD e Intel por Vulkan;
+- fallback automático para CPU quando a aceleração não está disponível;
+- precisão `float32` em CPU e CUDA para reduzir divergências;
+- instalador Windows com runtimes, modelos e dependências verificadas.
+
+## Instalação para usuário final
+
+O usuário final deve receber `TranscrevoFacil-Setup-<versão>.exe` a partir de uma release oficial. O instalador configura Node.js, Python, FFmpeg, Whisper, CUDA/cuDNN, Vulkan e os modelos necessários. O atalho verifica os runtimes, escolhe uma porta local livre, inicia o servidor e abre o navegador.
+
+O servidor aceita conexões somente de `localhost`. Na instalação final, dados e transcrições ficam em `%LOCALAPPDATA%\TranscrevoFacil\data` e não são removidos silenciosamente na desinstalação.
+
+As regras obrigatórias do produto e da distribuição estão em [`premissas.md`](premissas.md).
+
+## Desenvolvimento
+
+Requisitos: Windows, Node.js 24, pnpm 11 e Python 3.13 x64.
 
 ```powershell
+corepack enable
+corepack prepare pnpm@11.15.1 --activate
+pnpm install --frozen-lockfile
 powershell -ExecutionPolicy Bypass -File scripts/setup-local.ps1
+pnpm dev
 ```
 
-Ou instale manualmente o motor local:
+Abra `http://127.0.0.1:3000`.
 
-```bash
-pip install faster-whisper
+Para validar uma mudança:
+
+```powershell
+pnpm test
+pnpm run audit
+pnpm run verify:release
 ```
 
-5. Copie `.env.example` para `.env` se quiser trocar modelo, porta ou limite de upload.
-6. Instale as dependencias do app:
+Nunca versione `.env`, mídias, transcrições, modelos, runtimes ou credenciais reais.
 
-```bash
-npm install
+## Configuração
+
+Copie `.env.example` para `.env` somente quando precisar alterar os padrões. Opções principais:
+
+- `WHISPER_MODEL`: `tiny`, `base`, `small`, `medium`, `large-v3` ou caminho de um modelo local;
+- `UPLOAD_LIMIT_MB`: limite máximo de upload;
+- `THUMBNAIL_FRAME_COUNT`: quantidade de frames extraídos;
+- `WHISPER_CPU_THREADS`: `0` seleciona automaticamente;
+- `WHISPER_NUM_WORKERS`: quantidade de workers;
+- `FFMPEG_BIN`: caminho alternativo para `ffmpeg.exe`.
+
+`HOST` deve permanecer em `127.0.0.1`. Exposição em rede não é uma configuração suportada.
+
+## GPU e consistência
+
+Ao marcar **Utilizar GPU como processamento**, o backend é escolhido automaticamente:
+
+- NVIDIA compatível: faster-whisper/CTranslate2 com CUDA;
+- AMD ou Intel compatível: whisper.cpp com Vulkan;
+- GPU ausente, fraca, incompatível ou com falha: faster-whisper em CPU.
+
+CPU e CUDA usam `float32`. O backend Vulkan usa um modelo GGML equivalente e pode produzir pequenas diferenças de segmentação.
+
+## Instalador
+
+O manifesto [`installer/dependencies.json`](installer/dependencies.json) fixa versões, origens e hashes. Os pacotes Python e CUDA também são fixados transitivamente em [`installer/python-requirements.lock`](installer/python-requirements.lock).
+
+Para gerar o instalador em uma máquina Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1
 ```
 
-7. Inicie:
+O build baixa e verifica as ferramentas necessárias, executa testes, compila o backend Vulkan e grava o resultado em `dist-installer/`.
 
-```bash
-npm run dev
-```
+## Segurança
 
-8. Abra `http://localhost:3000`.
+Consulte [`SECURITY.md`](SECURITY.md) para relatar vulnerabilidades de forma privada. Não publique conteúdo transcrito ou logs com caminhos pessoais em issues.
 
-## O que ja faz
+## Licença
 
-- Upload de video ou audio.
-- Transcricao local em portugues, ingles, espanhol ou deteccao automatica.
-- Traducao para ingles usando o proprio Whisper local.
-- Download em TXT, JSON e SRT simples.
-- Base pronta para virar um produto publico em `transcrevofacil.com.br`.
-
-## Modelos locais
-
-No `.env`, ajuste `WHISPER_MODEL`.
-
-- `tiny`: mais rapido, menos preciso.
-- `base`: leve e aceitavel.
-- `small`: bom equilibrio inicial.
-- `medium`: melhor, mas mais pesado.
-- `large-v3`: melhor qualidade, exige mais maquina.
-
-## GPU e desempenho
-
-Se o computador tiver NVIDIA/CUDA disponivel, use:
-
-```env
-WHISPER_DEVICE=cuda
-WHISPER_COMPUTE_TYPE=int8_float16
-WHISPER_NUM_WORKERS=1
-```
-
-Para CPU, use `WHISPER_DEVICE=cpu` e `WHISPER_COMPUTE_TYPE=int8`. Aumente `WHISPER_NUM_WORKERS` com cuidado: em uma GPU com 4 GB de VRAM, `1` costuma ser mais estavel para um video por vez.
-
-## Proximos passos recomendados
-
-- Criar instalador para Windows com Python, ffmpeg e modelo empacotados.
-- Adicionar fila de processamento para varios videos.
-- Criar cadastro, historico de transcricoes e limite por plano.
-- Para publicar ao publico sem custo de API, rodar workers proprios com GPU/CPU e controlar fila por usuario.
+O código do TranscrevoFácil está sob a [licença MIT](LICENSE). Componentes e modelos de terceiros mantêm suas próprias licenças; consulte [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

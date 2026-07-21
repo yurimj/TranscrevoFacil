@@ -1,18 +1,22 @@
 {
   "name": "transcrevo-facil",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.15.1",
   "type": "module",
   "description": "Aplicativo local para transcrever videos sem consumir creditos de API.",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test",
+    "audit": "pnpm audit --prod --audit-level high",
+    "verify:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-release.ps1"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "multer": "^2.2.0",
-    "sanitize-filename": "^1.6.3"
-  },
-  "devDependencies": {}
+    "dotenv": "17.4.2",
+    "express": "4.22.2",
+    "multer": "2.2.0",
+    "sanitize-filename": "1.6.4"
+  }
 }
