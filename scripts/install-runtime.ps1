@@ -11,7 +11,7 @@ $WheelRoot = Join-Path $AssetRoot 'python-wheels'
 $DependencyFile = Join-Path $InstallRoot 'installer\dependencies.json'
 $CudaRequirementsLock = Join-Path $InstallRoot 'installer\python-requirements-cuda.lock'
 $Dependencies = Get-Content -Raw -LiteralPath $DependencyFile | ConvertFrom-Json
-$PythonInstaller = Join-Path $AssetRoot $Dependencies.python.fileName
+$PythonArchive = Join-Path $AssetRoot $Dependencies.python.fileName
 $NodeArchive = Join-Path $AssetRoot $Dependencies.node.fileName
 $VcRedist = Join-Path $AssetRoot $Dependencies.vcRedist.fileName
 $AssetManifest = Join-Path $AssetRoot 'manifest.sha256'
@@ -70,7 +70,7 @@ function Copy-WheelLicenseFiles {
   }
 }
 
-Assert-File $PythonInstaller 'Instalador do Python'
+Assert-File $PythonArchive 'Runtime portatil do Python'
 Assert-File $NodeArchive 'Runtime Node.js'
 Assert-File $VcRedist 'Microsoft Visual C++ Runtime'
 Assert-File (Join-Path $WheelRoot 'requirements.lock') 'Lock de pacotes Python'
@@ -116,20 +116,11 @@ if ($vcProcess.ExitCode -notin 0, 1638, 3010) {
 
 $PythonExe = Join-Path $PythonRoot 'python.exe'
 if (-not (Test-Path -LiteralPath $PythonExe)) {
-  $arguments = @(
-    '/quiet',
-    'InstallAllUsers=0',
-    'Include_launcher=0',
-    'Include_test=0',
-    'Include_pip=1',
-    'PrependPath=0',
-    "TargetDir=$PythonRoot"
-  )
-  $pythonProcess = Start-Process -FilePath $PythonInstaller -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
-  if (($pythonProcess.ExitCode -notin @(0, 3010)) -or -not (Test-Path -LiteralPath $PythonExe)) {
-    throw "A instalacao do Python falhou com codigo $($pythonProcess.ExitCode)."
-  }
+  Assert-ChildPath -Parent $RuntimeRoot -Child $PythonRoot
+  if (Test-Path -LiteralPath $PythonRoot) { [System.IO.Directory]::Delete($PythonRoot, $true) }
+  Expand-Archive -LiteralPath $PythonArchive -DestinationPath $PythonRoot -Force
 }
+if (-not (Test-Path -LiteralPath $PythonExe)) { throw 'O runtime Python foi extraido, mas python.exe nao foi encontrado.' }
 
 $NodeExe = Join-Path $NodeRoot 'node.exe'
 if (-not (Test-Path -LiteralPath $NodeExe)) {
@@ -137,8 +128,10 @@ if (-not (Test-Path -LiteralPath $NodeExe)) {
   Assert-ChildPath -Parent $RuntimeRoot -Child $nodeTemporary
   Assert-ChildPath -Parent $RuntimeRoot -Child $NodeRoot
   if (Test-Path -LiteralPath $nodeTemporary) { [System.IO.Directory]::Delete($nodeTemporary, $true) }
+  if (Test-Path -LiteralPath $NodeRoot) { [System.IO.Directory]::Delete($NodeRoot, $true) }
   Expand-Archive -LiteralPath $NodeArchive -DestinationPath $nodeTemporary -Force
   $nodeSource = Get-ChildItem -LiteralPath $nodeTemporary -Directory | Select-Object -First 1
+  if (-not $nodeSource) { throw 'O arquivo do Node.js nao contem o diretorio de runtime esperado.' }
   Move-Item -LiteralPath $nodeSource.FullName -Destination $NodeRoot
   [System.IO.Directory]::Delete($nodeTemporary, $true)
 }

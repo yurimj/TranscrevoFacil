@@ -57,7 +57,6 @@ Source: "..\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion
 Source: "assets\*"; DestDir: "{app}\installer-assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install-runtime.ps1"" -InstallRoot ""{app}"" -AssetRoot ""{app}\installer-assets"""; StatusMsg: "Instalando Python, Whisper, CUDA, Vulkan e FFmpeg..."; Flags: runhidden waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; Description: "Abrir o TranscrevoFácil"; Flags: postinstall nowait skipifsilent
 
 [Icons]
@@ -69,3 +68,26 @@ Type: filesandordirs; Name: "{app}\runtime"
 Type: filesandordirs; Name: "{app}\node_modules"
 Type: filesandordirs; Name: "{app}\installer-assets"
 Type: filesandordirs; Name: "{localappdata}\TranscrevoFacil\logs"
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  PowerShellExe: String;
+  Parameters: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    WizardForm.StatusLabel.Caption := 'Preparando runtimes locais do TranscrevoFacil...';
+    PowerShellExe := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+    Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' +
+      ExpandConstant('{app}\scripts\install-runtime.ps1') + '" -InstallRoot "' +
+      ExpandConstant('{app}') + '" -AssetRoot "' +
+      ExpandConstant('{app}\installer-assets') + '"';
+
+    ResultCode := -1;
+    if (not Exec(PowerShellExe, Parameters, ExpandConstant('{app}'),
+      SW_HIDE, ewWaitUntilTerminated, ResultCode)) or (ResultCode <> 0) then
+      RaiseException('A preparacao dos runtimes falhou. A instalacao nao foi concluida. Codigo: ' + IntToStr(ResultCode));
+  end;
+end;

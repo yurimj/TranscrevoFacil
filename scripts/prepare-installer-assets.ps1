@@ -94,11 +94,15 @@ function Copy-ArchiveLicenseFiles {
 
 New-Item -ItemType Directory -Force -Path $AssetRoot, $WheelRoot, $ModelRoot, $VulkanRoot, $FfmpegRoot, $LicenseRoot, $BuildRoot | Out-Null
 
+Get-ChildItem -LiteralPath $AssetRoot -File -Filter '*.download' | Remove-Item -Force
+
 if (-not $SkipDownloads) {
   Get-VerifiedDownload -Uri $Dependencies.python.url `
     -Destination (Join-Path $AssetRoot $Dependencies.python.fileName) `
     -ExpectedSha256 $Dependencies.python.sha256
-  Assert-TrustedSignature -Path (Join-Path $AssetRoot $Dependencies.python.fileName) -PublisherPattern $Dependencies.python.signerSubjectPattern
+  Get-ChildItem -LiteralPath $AssetRoot -File | Where-Object {
+    $_.Name -match '^python-[0-9.]+-amd64\.(exe|zip)$' -and $_.Name -ne $Dependencies.python.fileName
+  } | Remove-Item -Force
   Get-VerifiedDownload -Uri $Dependencies.node.url `
     -Destination (Join-Path $AssetRoot $Dependencies.node.fileName) `
     -ExpectedSha256 $Dependencies.node.sha256

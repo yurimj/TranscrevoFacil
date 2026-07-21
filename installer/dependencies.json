@@ -3,10 +3,10 @@
   "reviewedAt": "2026-07-21",
   "python": {
     "version": "3.13.14",
-    "fileName": "python-3.13.14-amd64.exe",
-    "url": "https://www.python.org/ftp/python/3.13.14/python-3.13.14-amd64.exe",
-    "sha256": "c54d9b9bbb8a36e6489363ddd01139707fd781d72f1f9e90c7ec65d0061368e0",
-    "signerSubjectPattern": "Python Software Foundation",
+    "fileName": "python-3.13.14-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.13.14/python-3.13.14-amd64.zip",
+    "sha256": "f73b6535281b58eee6bcfb3403af2bcfac711ea1463d8340c47c3047248eddf7",
+    "distribution": "portable",
     "license": "Python-2.0"
   },
   "node": {

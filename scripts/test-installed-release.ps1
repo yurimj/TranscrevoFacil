@@ -43,8 +43,9 @@ if ($LASTEXITCODE -ne 0) { throw 'O runtime Python instalado nao importou Whispe
 & $FfmpegExe -hide_banner -version | Select-Object -First 1
 if ($LASTEXITCODE -ne 0) { throw 'O FFmpeg instalado nao iniciou.' }
 
-$stdoutLog = Join-Path $env:RUNNER_TEMP 'transcrevofacil-smoke-output.log'
-$stderrLog = Join-Path $env:RUNNER_TEMP 'transcrevofacil-smoke-error.log'
+$LogRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+$stdoutLog = Join-Path $LogRoot 'transcrevofacil-smoke-output.log'
+$stderrLog = Join-Path $LogRoot 'transcrevofacil-smoke-error.log'
 try {
   $ServerProcess = Start-Process -FilePath $NodeExe -ArgumentList 'server.js' `
     -WorkingDirectory $InstallRoot -PassThru -WindowStyle Hidden `

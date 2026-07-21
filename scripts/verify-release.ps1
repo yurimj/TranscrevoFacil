@@ -69,6 +69,16 @@ try {
   }
 
   $dependencies = Get-Content -Raw -LiteralPath 'installer\dependencies.json' | ConvertFrom-Json
+  if ($dependencies.python.distribution -ne 'portable' -or $dependencies.python.fileName -notmatch '\.zip$') {
+    throw 'O Python do instalador deve ser uma distribuicao portatil em ZIP.'
+  }
+  $runtimeInstaller = Get-Content -Raw -LiteralPath 'scripts\install-runtime.ps1'
+  if ($runtimeInstaller -match 'InstallAllUsers|PythonInstaller') {
+    throw 'O runtime nao pode executar o instalador global do Python.'
+  }
+  if ($installerText -notmatch '\[Code\]' -or $installerText -notmatch 'RaiseException') {
+    throw 'O instalador deve abortar quando a preparacao dos runtimes falhar.'
+  }
   $reviewDate = [DateTime]::ParseExact($dependencies.reviewedAt, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
   if (([DateTime]::UtcNow.Date - $reviewDate.Date).TotalDays -gt 120) {
     throw 'A revisao das dependencias do instalador tem mais de 120 dias.'
