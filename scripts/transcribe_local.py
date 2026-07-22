@@ -3,6 +3,19 @@ import json
 import sys
 
 
+def friendly_runtime_error(error):
+    message = str(error)
+    lower = message.lower()
+    if "cublas64_12.dll" in lower or "cuda" in lower or "cudnn" in lower:
+        return (
+            "CUDA/GPU nao esta pronta neste computador. "
+            "Use WHISPER_DEVICE=cpu e WHISPER_COMPUTE_TYPE=int8 no .env, "
+            "ou instale as DLLs CUDA 12/cuDNN compativeis para usar GPU. "
+            f"Detalhe tecnico: {message}"
+        )
+    return message
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -29,31 +42,35 @@ def main():
         )
         return 2
 
-    model = WhisperModel(
-        args.model,
-        device=args.device,
-        compute_type=args.compute_type,
-        cpu_threads=args.cpu_threads,
-        num_workers=args.num_workers,
-    )
-
-    segments, info = model.transcribe(
-        args.file,
-        language=args.language or None,
-        task=args.task,
-        vad_filter=True,
-    )
-
     result_segments = []
-    for segment in segments:
-        result_segments.append(
-            {
-                "id": segment.id,
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text.strip(),
-            }
+    try:
+        model = WhisperModel(
+            args.model,
+            device=args.device,
+            compute_type=args.compute_type,
+            cpu_threads=args.cpu_threads,
+            num_workers=args.num_workers,
         )
+
+        segments, info = model.transcribe(
+            args.file,
+            language=args.language or None,
+            task=args.task,
+            vad_filter=True,
+        )
+
+        for segment in segments:
+            result_segments.append(
+                {
+                    "id": segment.id,
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": segment.text.strip(),
+                }
+            )
+    except RuntimeError as error:
+        print(friendly_runtime_error(error), file=sys.stderr)
+        return 1
 
     payload = {
         "text": "\n".join(segment["text"] for segment in result_segments).strip(),

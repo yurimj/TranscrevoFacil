@@ -1,0 +1,106 @@
+name: Gerar instalador Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installer:
+    runs-on: windows-2025
+    timeout-minutes: 120
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.18.0'
+
+      - name: Configurar Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13.14'
+
+      - name: Instalar ferramentas de build
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install-build-tools.ps1
+
+      - name: Instalar dependencias Node.js
+        shell: powershell
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.15.1 --activate
+          pnpm install --prod --frozen-lockfile --config.node-linker=hoisted
+
+      - name: Preparar runtimes, modelos e DLLs
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare-installer-assets.ps1 -PythonCommand python
+
+      - name: Executar testes
+        run: pnpm test
+
+      - name: Validar requisitos de publicação
+        run: pnpm run verify:release
+
+      - name: Compilar instalador
+        shell: powershell
+        run: '& $env:ISCC_PATH installer\TranscrevoFacil.iss'
+
+      - name: Validar tamanho para GitHub Release
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem dist-installer\TranscrevoFacil-Setup-*.exe | Select-Object -First 1
+          $maximumReleaseBytes = 2GB
+          if ($installer.Length -ge $maximumReleaseBytes) {
+            throw "O instalador tem $($installer.Length) bytes e excede o limite de 2 GiB por arquivo do GitHub Releases."
+          }
+          Write-Host "Instalador publicavel: $([math]::Round($installer.Length / 1GB, 2)) GiB."
+
+      - name: Testar instalação limpa
+        shell: powershell
+        run: |
+          $installer = Get-ChildItem dist-installer\TranscrevoFacil-Setup-*.exe | Select-Object -First 1
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test-installed-release.ps1 -InstallerPath $installer.FullName
+
+      - name: Assinar release pública
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        env:
+          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $installer = Get-ChildItem dist-installer\TranscrevoFacil-Setup-*.exe | Select-Object -First 1
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sign-installer.ps1 -InstallerPath $installer.FullName
+
+      - name: Gerar checksums
+        shell: powershell
+        run: |
+          $lines = Get-ChildItem dist-installer\TranscrevoFacil-Setup-*.exe | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          [System.IO.File]::WriteAllLines((Join-Path $PWD 'dist-installer\SHA256SUMS.txt'), $lines, [System.Text.UTF8Encoding]::new($false))
+          Copy-Item LICENSE, THIRD_PARTY_NOTICES.md -Destination dist-installer
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TranscrevoFacil-Windows-Setup
+          path: |
+            dist-installer\TranscrevoFacil-Setup-*.exe
+            dist-installer\SHA256SUMS.txt
+            dist-installer\LICENSE
+            dist-installer\THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 14

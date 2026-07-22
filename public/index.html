@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Transcrevo Facil</title>
+    <title>TranscrevoFácil</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -11,7 +11,7 @@
       <section class="hero">
         <div>
           <p class="eyebrow">Transcricao de videos</p>
-          <h1>Transcrevo Facil</h1>
+          <h1>TranscrevoFácil</h1>
           <p class="lead">Envie um video ou audio e transcreva localmente no seu computador, sem gastar tokens de API.</p>
         </div>
         <div class="status" id="apiStatus">Verificando configuracao...</div>
@@ -44,8 +44,13 @@
             </label>
           </div>
 
+          <label class="gpu-option">
+            <input id="useGpu" name="useGpu" type="checkbox" />
+            <span id="gpuOptionLabel">Utilizar GPU como processamento</span>
+          </label>
+
           <button type="submit" id="submitButton">Transcrever agora</button>
-          <p class="hint">O processamento usa Whisper local. Videos grandes podem demorar, mas nao consomem creditos de IA.</p>
+          <p class="hint">O processamento usa Whisper local. A aceleracao detecta automaticamente NVIDIA, AMD ou Intel; se a GPU falhar, a transcricao continua pela CPU.</p>
         </form>
 
         <section class="result" aria-live="polite">
@@ -56,7 +61,35 @@
             </div>
             <div class="actions" id="actions"></div>
           </div>
+          <div class="metrics" id="metrics" hidden>
+            <p><strong>Processamento utilizado:</strong> <span id="runtimeUsed"></span></p>
+            <p><strong>Tempo para transcrever:</strong> <span id="transcriptionTime"></span></p>
+            <p><strong>Tempo total do video:</strong> <span id="mediaDuration"></span></p>
+          </div>
           <pre id="output">Ainda nao ha transcricao.</pre>
+          <section class="thumbnail-section" id="thumbnailSection" hidden>
+            <div class="thumbnail-head">
+              <div>
+                <p class="eyebrow">Thumbnail</p>
+                <h2>Frames bons do video</h2>
+              </div>
+              <span id="thumbnailCount"></span>
+            </div>
+            <div class="thumbnail-grid" id="thumbnailGrid"></div>
+            <div class="thumbnail-viewer" id="thumbnailViewer" hidden>
+              <div class="viewer-toolbar">
+                <button type="button" id="thumbnailPrev" aria-label="Frame anterior">‹</button>
+                <div>
+                  <strong id="thumbnailViewerLabel"></strong>
+                  <span id="thumbnailViewerHelp">PNG em resolucao original</span>
+                </div>
+                <button type="button" id="thumbnailNext" aria-label="Proximo frame">›</button>
+              </div>
+              <img id="thumbnailViewerImage" alt="Frame selecionado para thumbnail" />
+              <a id="thumbnailOpenOriginal" href="#" target="_blank" rel="noreferrer">Abrir PNG isolado</a>
+            </div>
+            <p class="thumbnail-note" id="thumbnailNote"></p>
+          </section>
         </section>
       </section>
     </main>
