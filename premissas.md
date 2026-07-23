@@ -55,7 +55,7 @@ O servidor deve escutar exclusivamente em loopback (`127.0.0.1`, `localhost` ou 
 - commits devem usar o endereco `noreply` do GitHub, salvo decisao consciente do autor;
 - `.env`, uploads, transcricoes, runtimes, modelos, caches, logs, chaves e credenciais nunca podem ser versionados;
 - dependencias do GitHub Actions devem ser fixadas pelo SHA completo do commit;
-- a branch padrao deve exigir pull request e verificacoes de CI, sem force-push ou exclusao;
+- a branch padrao aceita commits e merges diretos; pull request e verificacoes de CI sao recomendados, mas nao obrigatorios; force-push e exclusao devem ser feitos com cuidado, porem nao ficam bloqueados;
 - Dependabot, alertas de vulnerabilidade, secret scanning e relato privado de vulnerabilidades devem permanecer habilitados;
 - releases devem incluir checksums, procedencia, avisos e textos de licenca exigidos;
 - qualquer credencial encontrada deve ser revogada, nao apenas removida do commit mais recente.
