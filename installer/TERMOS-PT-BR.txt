@@ -1,0 +1,38 @@
+﻿Termo de Licença de Uso - TranscrevoFácil
+
+Licença MIT
+
+Copyright (c) 2026 Contribuidores do TranscrevoFácil
+
+Pela presente é concedida, gratuitamente, a qualquer pessoa que obtenha uma
+cópia deste software e dos arquivos de documentação associados (o "Software"),
+permissão para utilizar o Software sem restrição, incluindo, sem limitação, os
+direitos de usar, copiar, modificar, mesclar, publicar, distribuir, sublicenciar
+e/ou vender cópias do Software, e de permitir que as pessoas a quem o Software
+seja fornecido o façam, sujeito às seguintes condições:
+
+O aviso de direitos autorais acima e este aviso de permissão devem ser incluídos
+em todas as cópias ou partes substanciais do Software.
+
+O SOFTWARE É FORNECIDO "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO, EXPRESSA OU
+IMPLÍCITA, INCLUINDO, MAS NÃO SE LIMITANDO ÀS GARANTIAS DE COMERCIALIZAÇÃO,
+ADEQUAÇÃO A UMA FINALIDADE ESPECÍFICA E NÃO VIOLAÇÃO. EM NENHUMA HIPÓTESE OS
+AUTORES OU TITULARES DOS DIREITOS AUTORAIS SERÃO RESPONSÁVEIS POR QUALQUER
+REIVINDICAÇÃO, DANOS OU OUTRA RESPONSABILIDADE, SEJA EM UMA AÇÃO CONTRATUAL,
+ATO ILÍCITO OU DE OUTRA FORMA, DECORRENTE DE, OU RELACIONADA A, O SOFTWARE OU
+AO USO OU A OUTRAS NEGOCIAÇÕES COM O SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Componentes de terceiros
+
+O TranscrevoFácil distribui componentes de terceiros - por exemplo FFmpeg,
+Python, Node.js, faster-whisper/CTranslate2 e whisper.cpp - cada um sob a sua
+própria licença. Os textos dessas licenças acompanham a instalação (pasta
+"licenses") e estão listados no arquivo THIRD_PARTY_NOTICES.md.
+
+Tradução de cortesia
+
+Esta é uma tradução para o português, fornecida por conveniência. Em caso de
+dúvida ou divergência, o texto original em inglês da Licença MIT (arquivo
+LICENSE) é a versão legalmente válida.

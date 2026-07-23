@@ -1,4 +1,4 @@
-#define MyAppName "TranscrevoFácil"
+﻿#define MyAppName "TranscrevoFácil"
 #define MyAppVersion "0.2.0"
 #define MyAppPublisher "TranscrevoFácil"
 #define MyAppExeName "scripts\start-transcrevofacil.ps1"
@@ -21,11 +21,14 @@ OutputBaseFilename=TranscrevoFacil-Setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-LicenseFile=..\LICENSE
+LicenseFile=TERMOS-PT-BR.txt
 SetupIconFile=..\public\transcrevofacil-logo.ico
 UninstallDisplayIcon={app}\public\transcrevofacil-logo.ico
 CloseApplications=yes
 RestartApplications=no
+
+[Languages]
+Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na Área de Trabalho"; GroupDescription: "Atalhos:"; Flags: unchecked
