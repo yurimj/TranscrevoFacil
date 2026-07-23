@@ -17,6 +17,8 @@ jobs:
   installer:
     runs-on: windows-2025
     timeout-minutes: 120
+    env:
+      HAS_SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 != '' }}
 
     steps:
       - name: Baixar o código
@@ -74,7 +76,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts\test-installed-release.ps1 -InstallerPath $installer.FullName
 
       - name: Assinar release pública
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.HAS_SIGNING_CERT == 'true'
         shell: powershell
         env:
           WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
