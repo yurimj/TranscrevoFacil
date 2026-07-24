@@ -29,6 +29,42 @@ function Add-SessionPath {
   }
 }
 
+function Confirm-RuntimeComponent {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$MissingMessage,
+    [string]$BrokenMessage,
+    [string[]]$ValidateArgs,
+    [int]$Attempts = 5,
+    [int]$DelayMs = 500
+  )
+
+  # Uma unica falha de Test-Path (falso-negativo transitorio de IO/antivirus, como o
+  # "Node.js nao encontrado" ja visto com o proprio node.exe presente) nao pode derrubar
+  # o app: reverifica algumas vezes antes de concluir que o arquivo realmente sumiu.
+  $exists = $false
+  for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+    if (Test-Path -LiteralPath $Path) { $exists = $true; break }
+    if ($attempt -lt $Attempts) { Start-Sleep -Milliseconds $DelayMs }
+  }
+  if (-not $exists) { throw $MissingMessage }
+
+  if (-not $PSBoundParameters.ContainsKey('ValidateArgs')) { return }
+
+  # O executavel existe; confirma que roda de fato. Um lock momentaneo (ex.: primeira
+  # varredura do antivirus sobre o binario) tambem e reabsorvido tentando de novo.
+  for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+    try {
+      & $Path @ValidateArgs 2>&1 | Out-Null
+      if ($LASTEXITCODE -eq 0) { return }
+    } catch {
+      # falha transitoria ao iniciar o processo: cai no retry abaixo
+    }
+    if ($attempt -lt $Attempts) { Start-Sleep -Milliseconds $DelayMs }
+  }
+  throw $BrokenMessage
+}
+
 function Test-AppHealth {
   param([int]$Port)
   try {
@@ -72,22 +108,20 @@ $WhisperCppExe = Join-Path $RuntimeRoot 'whisper-vulkan\whisper-cli.exe'
 $WhisperCppModel = Join-Path $RuntimeRoot 'models\ggml-small.bin'
 $FasterWhisperModel = Join-Path $RuntimeRoot 'models\faster-whisper-small'
 
-if (-not (Test-Path -LiteralPath $NodeExe)) {
-  throw 'O runtime Node.js nao foi encontrado. Execute Reparar no instalador do TranscrevoFacil.'
-}
-if (-not (Test-Path -LiteralPath $PythonExe)) {
-  throw 'O runtime Python nao foi encontrado. Execute Reparar no instalador do TranscrevoFacil.'
-}
-if (-not (Test-Path -LiteralPath $FfmpegExe)) {
-  throw 'O FFmpeg nao foi encontrado. Execute Reparar no instalador do TranscrevoFacil.'
-}
+Confirm-RuntimeComponent -Path $NodeExe `
+  -MissingMessage 'O runtime Node.js nao foi encontrado. Execute Reparar no instalador do TranscrevoFacil.' `
+  -BrokenMessage 'O runtime Node.js esta corrompido. Execute Reparar no instalador.' `
+  -ValidateArgs '--version'
 
-& $NodeExe --version | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'O runtime Node.js esta corrompido. Execute Reparar no instalador.' }
-& $PythonExe -c 'import faster_whisper, ctranslate2' | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'O runtime Python/Whisper esta incompleto. Execute Reparar no instalador.' }
-& $FfmpegExe -version 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'O FFmpeg esta corrompido. Execute Reparar no instalador.' }
+Confirm-RuntimeComponent -Path $PythonExe `
+  -MissingMessage 'O runtime Python nao foi encontrado. Execute Reparar no instalador do TranscrevoFacil.' `
+  -BrokenMessage 'O runtime Python/Whisper esta incompleto. Execute Reparar no instalador.' `
+  -ValidateArgs @('-c', 'import faster_whisper, ctranslate2')
+
+Confirm-RuntimeComponent -Path $FfmpegExe `
+  -MissingMessage 'O FFmpeg nao foi encontrado. Execute Reparar no instalador do TranscrevoFacil.' `
+  -BrokenMessage 'O FFmpeg esta corrompido. Execute Reparar no instalador.' `
+  -ValidateArgs '-version'
 
 Add-SessionPath -Directory (Split-Path $NodeExe)
 Add-SessionPath -Directory (Split-Path $PythonExe)
