@@ -23,6 +23,14 @@ const whisperGpuComputeType = process.env.WHISPER_GPU_COMPUTE_TYPE || 'float32';
 const bundledFfmpeg = path.join(process.cwd(), 'runtime', 'ffmpeg', 'ffmpeg.exe');
 const ffmpegBin = process.env.FFMPEG_BIN || (fs.existsSync(bundledFfmpeg) ? bundledFfmpeg : 'ffmpeg');
 const thumbnailFrameCount = Math.max(12, Math.min(120, Number(process.env.THUMBNAIL_FRAME_COUNT || 80)));
+// "Exibir mais": quantos frames novos cada clique busca no video, teto total por job,
+// distancia minima entre frames (evita frames quase identicos) e por quanto tempo o video
+// do job fica guardado para permitir novas extracoes (limpeza automatica).
+const extraFrameBatch = Math.max(1, Math.min(120, Number(process.env.EXTRA_FRAME_BATCH || 40)));
+const maxJobFrames = Math.max(thumbnailFrameCount, Number(process.env.MAX_JOB_FRAMES || 400));
+const minFrameGapSeconds = 0.2;
+const frameJobTtlMs = Math.max(60 * 1000, Number(process.env.FRAME_JOB_TTL_MS || 60 * 60 * 1000));
+const maxFrameJobs = Math.max(1, Number(process.env.MAX_FRAME_JOBS || 10));
 const availableCpus = Math.max(1, os.cpus().length);
 const autoCpuThreads = Math.max(1, availableCpus - 1);
 const autoNumWorkers = Math.max(1, Math.min(4, Math.floor(availableCpus / 2)));
@@ -382,6 +390,30 @@ function runFfmpeg(args) {
   });
 }
 
+// Le a duracao do arquivo direto da saida do proprio ffmpeg (linha "Duration: HH:MM:SS.xx").
+// Evita depender do ffprobe, que nao e empacotado pelo instalador. Usado no modo "Apenas Frames",
+// onde nao ha resultado de transcricao para extrair a duracao. Nunca rejeita: retorna null se falhar.
+function probeMediaDurationSeconds(filePath) {
+  return new Promise((resolve) => {
+    const child = spawn(ffmpegBin, ['-hide_banner', '-i', filePath], { cwd: root, windowsHide: true });
+    let stderr = '';
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', () => resolve(null));
+    child.on('close', () => {
+      const match = stderr.match(/Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+      if (!match) {
+        resolve(null);
+        return;
+      }
+      const totalSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+      resolve(Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : null);
+    });
+  });
+}
+
 function formatFrameLabel(seconds, index) {
   const safeSeconds = Math.max(0, Number(seconds) || 0);
   const m = Math.floor(safeSeconds / 60);
@@ -485,12 +517,167 @@ async function generateGoodFrames({ filePath, originalExt, name, durationSeconds
   }
 }
 
+// ----- Jobs de frames: guardam o video para permitir "Exibir mais" (novos frames sob demanda) -----
+
+function jobManifestPath(jobId) {
+  return path.join(thumbnailDir, jobId, 'job.json');
+}
+
+async function readJobManifest(jobId) {
+  try {
+    return JSON.parse(await fsp.readFile(jobManifestPath(jobId), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function writeJobManifest(jobId, manifest) {
+  await fsp.writeFile(jobManifestPath(jobId), JSON.stringify(manifest, null, 2), 'utf8');
+}
+
+async function removeFrameJob(jobId) {
+  const manifest = await readJobManifest(jobId);
+  if (manifest?.sourceFile) {
+    await fsp.rm(path.join(uploadDir, path.basename(manifest.sourceFile)), { force: true }).catch(() => {});
+  }
+  await fsp.rm(path.join(thumbnailDir, jobId), { recursive: true, force: true }).catch(() => {});
+}
+
+// Remove jobs expirados (por TTL) e mantem apenas os mais recentes, liberando o disco.
+async function sweepFrameJobs() {
+  const now = Date.now();
+  const entries = await fsp.readdir(thumbnailDir, { withFileTypes: true }).catch(() => []);
+  const jobs = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const stat = await fsp.stat(jobManifestPath(entry.name)).catch(() => null);
+    if (!stat) continue; // diretorio de thumbnails sem manifesto: nao e um job com "Exibir mais"
+    jobs.push({ id: entry.name, mtimeMs: stat.mtimeMs });
+  }
+
+  const alive = [];
+  for (const job of jobs) {
+    if (now - job.mtimeMs > frameJobTtlMs) {
+      await removeFrameJob(job.id);
+    } else {
+      alive.push(job);
+    }
+  }
+
+  alive.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  for (const job of alive.slice(maxFrameJobs)) {
+    await removeFrameJob(job.id);
+  }
+}
+
+function canExtractMore(durationSeconds, usedTimes) {
+  if (usedTimes.length >= maxJobFrames) return false;
+  const duration = Number(durationSeconds) > 0 ? Number(durationSeconds) : 120;
+  const anchors = [0, ...usedTimes.filter((t) => t > 0 && t < duration), duration].sort((a, b) => a - b);
+  let maxGap = 0;
+  for (let i = 0; i < anchors.length - 1; i += 1) {
+    maxGap = Math.max(maxGap, anchors[i + 1] - anchors[i]);
+  }
+  return maxGap >= minFrameGapSeconds * 2;
+}
+
+// Escolhe novos instantes dividindo sempre o maior intervalo livre: cada frame extra cai
+// no maior "buraco" da linha do tempo, densificando sem repetir os instantes ja usados.
+function nextExtraTimes(durationSeconds, usedTimes, count) {
+  const duration = Number(durationSeconds) > 0 ? Number(durationSeconds) : 120;
+  const anchors = [0, ...usedTimes.filter((t) => t > 0 && t < duration), duration].sort((a, b) => a - b);
+  const result = [];
+
+  while (result.length < count && usedTimes.length + result.length < maxJobFrames) {
+    let bestGap = -1;
+    let bestPos = -1;
+    for (let i = 0; i < anchors.length - 1; i += 1) {
+      const gap = anchors[i + 1] - anchors[i];
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestPos = i;
+      }
+    }
+    if (bestGap < minFrameGapSeconds * 2) break;
+    const mid = (anchors[bestPos] + anchors[bestPos + 1]) / 2;
+    result.push(Math.min(duration - 0.1, Math.max(0.1, mid)));
+    anchors.splice(bestPos + 1, 0, mid);
+  }
+
+  // Ordena por tempo para que cada lote de "Exibir mais" apareca como uma passada
+  // cronologica (mais densa) pela linha do tempo, em vez de instantes fora de ordem.
+  return result.sort((a, b) => a - b);
+}
+
+async function extractExtraFrames({ sourcePath, jobDir, publicBase, startCounter, times }) {
+  const created = [];
+  for (const [offset, timestamp] of times.entries()) {
+    const globalIndex = startCounter + offset;
+    const file = `extra-${String(globalIndex + 1).padStart(4, '0')}.png`;
+    await runFfmpeg([
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-ss',
+      String(timestamp),
+      '-i',
+      sourcePath,
+      '-frames:v',
+      '1',
+      '-y',
+      path.join(jobDir, file)
+    ]);
+    created.push({ url: `${publicBase}/${file}`, label: formatFrameLabel(timestamp, globalIndex) });
+  }
+  return created;
+}
+
+// Move o video para o armazenamento do job, extrai o lote inicial de frames e grava o manifesto,
+// para que "Exibir mais" possa voltar ao mesmo video e amostrar novos instantes depois.
+async function createFrameJob({ sourcePath, originalExt, durationSeconds }) {
+  if (!videoExtensions.has(originalExt)) {
+    return { job: null, frames: [], error: null, hasMore: false };
+  }
+
+  await sweepFrameJobs().catch(() => {});
+  const jobId = crypto.randomUUID();
+  const jobDir = path.join(thumbnailDir, jobId);
+  const jobSourcePath = path.join(uploadDir, `job-${jobId}${originalExt}`);
+  await fsp.rename(sourcePath, jobSourcePath);
+
+  const duration = Number(durationSeconds) > 0 ? Number(durationSeconds) : await probeMediaDurationSeconds(jobSourcePath);
+  const { frames, error } = await generateGoodFrames({
+    filePath: jobSourcePath,
+    originalExt,
+    name: jobId,
+    durationSeconds: duration
+  });
+
+  if (!frames.length) {
+    await fsp.rm(jobSourcePath, { force: true }).catch(() => {});
+    await fsp.rm(jobDir, { recursive: true, force: true }).catch(() => {});
+    return { job: null, frames: [], error, hasMore: false };
+  }
+
+  const usedTimes = buildFrameTimes(duration, frames.length);
+  await writeJobManifest(jobId, {
+    sourceFile: path.basename(jobSourcePath),
+    ext: originalExt,
+    duration: Number(duration) > 0 ? Number(duration) : null,
+    usedTimes,
+    frameCounter: frames.length,
+    createdAt: Date.now()
+  });
+
+  return { job: jobId, frames, error, hasMore: canExtractMore(duration, usedTimes) };
+}
+
 app.get('/api/health', (_req, res) => {
   const cpuRuntime = getWhisperRuntime(false);
   res.json({
     ok: true,
     app: 'transcrevofacil',
-    version: '0.2.0',
+    version: '0.2.3',
     engine: 'local-faster-whisper',
     model: whisperModel,
     device: cpuRuntime.device,
@@ -527,6 +714,9 @@ app.post('/api/transcribe', upload.single('media'), async (req, res, next) => {
       return;
     }
     const useGpu = booleanFromForm(req.body.useGpu);
+    // Modo "Apenas Transcricao" envia includeFrames=false para pular a extracao de frames.
+    // Ausente => true, preservando o comportamento de "Transcricao + Frames".
+    const includeFrames = req.body.includeFrames == null ? true : booleanFromForm(req.body.includeFrames);
     const originalExt = path.extname(file.originalname).toLowerCase();
     stableFilePath = path.join(uploadDir, `${file.filename}${originalExt}`);
     fs.renameSync(file.path, stableFilePath);
@@ -544,12 +734,10 @@ app.post('/api/transcribe', upload.single('media'), async (req, res, next) => {
     const srtText = toSrt(result);
     const mediaDurationSeconds = mediaDurationFromResult(result);
     const name = timestampName(file.originalname);
-    const thumbnailResult = await generateGoodFrames({
-      filePath: stableFilePath,
-      originalExt,
-      name,
-      durationSeconds: mediaDurationSeconds
-    });
+    // Com frames, cria um job que guarda o video para permitir "Exibir mais" depois.
+    const frameJob = includeFrames
+      ? await createFrameJob({ sourcePath: stableFilePath, originalExt, durationSeconds: mediaDurationSeconds })
+      : { job: null, frames: [], error: null, hasMore: false };
     const txtPath = path.join(transcriptDir, `${name}.txt`);
     const jsonPath = path.join(transcriptDir, `${name}.json`);
     const srtPath = path.join(transcriptDir, `${name}.srt`);
@@ -578,16 +766,103 @@ app.post('/api/transcribe', upload.single('media'), async (req, res, next) => {
         json: `/api/download/${path.basename(jsonPath)}`,
         srt: `/api/download/${path.basename(srtPath)}`
       },
-      thumbnails: thumbnailResult.frames,
-      thumbnailError: thumbnailResult.error
+      job: frameJob.job,
+      hasMore: frameJob.hasMore,
+      thumbnails: frameJob.frames,
+      thumbnailError: frameJob.error
     });
   } catch (error) {
     next(error);
   } finally {
+    // createFrameJob move o video para o armazenamento do job; aqui so limpamos o upload temporario.
     await Promise.all([
       fsp.rm(file.path, { force: true }).catch(() => {}),
       fsp.rm(stableFilePath, { force: true }).catch(() => {})
     ]);
+  }
+});
+
+app.post('/api/frames', upload.single('media'), async (req, res, next) => {
+  const file = req.file;
+  if (!file) {
+    res.status(400).json({ error: 'Envie um arquivo de audio ou video.' });
+    return;
+  }
+
+  let stableFilePath = file.path;
+  try {
+    const originalExt = path.extname(file.originalname).toLowerCase();
+    stableFilePath = path.join(uploadDir, `${file.filename}${originalExt}`);
+    fs.renameSync(file.path, stableFilePath);
+
+    const mediaDurationSeconds = await probeMediaDurationSeconds(stableFilePath);
+    const frameJob = await createFrameJob({ sourcePath: stableFilePath, originalExt, durationSeconds: mediaDurationSeconds });
+
+    res.json({
+      id: crypto.randomUUID(),
+      filename: file.originalname,
+      framesOnly: true,
+      mediaDurationSeconds,
+      job: frameJob.job,
+      hasMore: frameJob.hasMore,
+      thumbnails: frameJob.frames,
+      thumbnailError: frameJob.error
+    });
+  } catch (error) {
+    next(error);
+  } finally {
+    // createFrameJob move o video para o armazenamento do job; aqui so limpamos o upload temporario.
+    await Promise.all([
+      fsp.rm(file.path, { force: true }).catch(() => {}),
+      fsp.rm(stableFilePath, { force: true }).catch(() => {})
+    ]);
+  }
+});
+
+app.post('/api/frames/:job/more', async (req, res, next) => {
+  try {
+    const jobId = sanitize(req.params.job);
+    const jobDir = jobId ? resolveInside(thumbnailDir, jobId) : null;
+    if (!jobId || !jobDir) {
+      res.status(404).json({ error: 'Job de frames invalido.' });
+      return;
+    }
+
+    const manifest = await readJobManifest(jobId);
+    if (!manifest) {
+      res.status(404).json({ error: 'Nao encontrei este conjunto de frames. Envie o video novamente para extrair mais.' });
+      return;
+    }
+
+    const jobSourcePath = path.join(uploadDir, path.basename(manifest.sourceFile || ''));
+    if (!manifest.sourceFile || !fs.existsSync(jobSourcePath)) {
+      await removeFrameJob(jobId).catch(() => {});
+      res.status(410).json({ error: 'O video expirou. Envie novamente para extrair mais frames.' });
+      return;
+    }
+
+    const times = nextExtraTimes(manifest.duration, manifest.usedTimes, extraFrameBatch);
+    if (!times.length) {
+      res.json({ thumbnails: [], hasMore: false });
+      return;
+    }
+
+    const newFrames = await extractExtraFrames({
+      sourcePath: jobSourcePath,
+      jobDir,
+      publicBase: `/api/thumbnails/${jobId}`,
+      startCounter: manifest.frameCounter,
+      times
+    });
+
+    manifest.usedTimes = [...manifest.usedTimes, ...times];
+    manifest.frameCounter += newFrames.length;
+    manifest.updatedAt = Date.now();
+    await writeJobManifest(jobId, manifest);
+
+    res.json({ thumbnails: newFrames, hasMore: canExtractMore(manifest.duration, manifest.usedTimes) });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -625,4 +900,6 @@ app.use((error, _req, res, _next) => {
 
 app.listen(port, host, () => {
   console.log(`TranscrevoFácil rodando em http://${host}:${port}`);
+  // Limpa jobs de frames antigos deixados por execucoes anteriores.
+  sweepFrameJobs().catch(() => {});
 });
