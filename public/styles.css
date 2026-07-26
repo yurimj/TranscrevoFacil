@@ -196,6 +196,28 @@ button:disabled {
   opacity: 0.65;
 }
 
+.submit-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.submit-row button {
+  padding: 8px 6px;
+  font-size: 0.9rem;
+  line-height: 1.15;
+}
+
+.button-secondary {
+  background: #fff;
+  color: var(--brand-dark);
+  border: 1px solid var(--brand);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: rgba(15, 118, 110, 0.08);
+}
+
 .hint {
   margin: 12px 0 0;
   color: var(--muted);
@@ -343,6 +365,24 @@ pre {
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.24);
 }
 
+.thumbnail-more {
+  width: auto;
+  margin-top: 12px;
+  padding: 0 20px;
+  background: #fff;
+  color: var(--brand-dark);
+  border: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+
+.thumbnail-more:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+
+.thumbnail-more[hidden] {
+  display: none;
+}
+
 .thumbnail-card span {
   overflow-wrap: anywhere;
 }
@@ -427,7 +467,8 @@ pre {
 @media (max-width: 860px) {
   .hero,
   .workspace,
-  .controls {
+  .controls,
+  .submit-row {
     grid-template-columns: 1fr;
   }
 

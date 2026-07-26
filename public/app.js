@@ -4,6 +4,8 @@ const fileName = document.querySelector('#fileName');
 const output = document.querySelector('#output');
 const actions = document.querySelector('#actions');
 const submitButton = document.querySelector('#submitButton');
+const transcribeOnlyButton = document.querySelector('#transcribeOnlyButton');
+const framesOnlyButton = document.querySelector('#framesOnlyButton');
 const apiStatus = document.querySelector('#apiStatus');
 const metrics = document.querySelector('#metrics');
 const transcriptionTime = document.querySelector('#transcriptionTime');
@@ -21,8 +23,11 @@ const thumbnailViewerLabel = document.querySelector('#thumbnailViewerLabel');
 const thumbnailOpenOriginal = document.querySelector('#thumbnailOpenOriginal');
 const thumbnailPrev = document.querySelector('#thumbnailPrev');
 const thumbnailNext = document.querySelector('#thumbnailNext');
+const thumbnailShowMore = document.querySelector('#thumbnailShowMore');
 let currentThumbnails = [];
 let currentThumbnailIndex = 0;
+let currentJob = null;
+let currentHasMore = false;
 
 function formatDuration(seconds) {
   const parsedSeconds = Number(seconds);
@@ -62,13 +67,50 @@ function resetThumbnails() {
   thumbnailViewer.hidden = true;
   thumbnailViewerImage.removeAttribute('src');
   thumbnailOpenOriginal.href = '#';
+  thumbnailShowMore.hidden = true;
   currentThumbnails = [];
   currentThumbnailIndex = 0;
+  currentJob = null;
+  currentHasMore = false;
 }
 
-function selectThumbnail(index) {
+function thumbnailCardHtml(thumbnail, index) {
+  const label = escapeHtml(thumbnail.label || `Frame ${index + 1}`);
+  const url = escapeHtml(thumbnail.url);
+  return `
+        <button class="thumbnail-card" type="button" data-thumbnail-index="${index}">
+          <img src="${url}" alt="${label}" loading="lazy" />
+          <span>${label}</span>
+        </button>
+      `;
+}
+
+function wireThumbnailCard(button) {
+  button.addEventListener('click', () => {
+    selectThumbnail(Number(button.dataset.thumbnailIndex), { scroll: true });
+  });
+}
+
+// Acrescenta os frames recem-buscados no video ("Exibir mais") ao final da grade,
+// sem recriar os cards existentes (preserva a selecao atual).
+function appendThumbnails(newThumbnails) {
+  const startIndex = currentThumbnails.length;
+  currentThumbnails = currentThumbnails.concat(newThumbnails);
+  thumbnailGrid.insertAdjacentHTML(
+    'beforeend',
+    newThumbnails.map((thumbnail, offset) => thumbnailCardHtml(thumbnail, startIndex + offset)).join('')
+  );
+  const cards = thumbnailGrid.querySelectorAll('.thumbnail-card');
+  for (let i = startIndex; i < cards.length; i += 1) {
+    wireThumbnailCard(cards[i]);
+  }
+  thumbnailCount.textContent = `${currentThumbnails.length} opcoes`;
+}
+
+function selectThumbnail(index, options = {}) {
   if (!currentThumbnails.length) return;
   currentThumbnailIndex = (index + currentThumbnails.length) % currentThumbnails.length;
+
   const thumbnail = currentThumbnails[currentThumbnailIndex];
   thumbnailViewer.hidden = false;
   thumbnailViewerImage.src = thumbnail.url;
@@ -81,38 +123,34 @@ function selectThumbnail(index) {
     button.classList.toggle('selected', buttonIndex === currentThumbnailIndex);
     button.setAttribute('aria-pressed', String(buttonIndex === currentThumbnailIndex));
   });
+
+  if (options.scroll) {
+    thumbnailViewer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function renderThumbnails(result) {
   const thumbnails = Array.isArray(result.thumbnails) ? result.thumbnails : [];
   currentThumbnails = thumbnails;
   currentThumbnailIndex = 0;
+  currentJob = result.job || null;
+  currentHasMore = Boolean(result.hasMore);
   thumbnailSection.hidden = false;
-  thumbnailGrid.innerHTML = thumbnails
-    .map((thumbnail, index) => {
-      const label = escapeHtml(thumbnail.label || `Frame ${index + 1}`);
-      const url = escapeHtml(thumbnail.url);
-      return `
-        <button class="thumbnail-card" type="button" data-thumbnail-index="${index}">
-          <img src="${url}" alt="${label}" loading="lazy" />
-          <span>${label}</span>
-        </button>
-      `;
-    })
-    .join('');
+  thumbnailGrid.innerHTML = thumbnails.map((thumbnail, index) => thumbnailCardHtml(thumbnail, index)).join('');
 
   thumbnailCount.textContent = thumbnails.length ? `${thumbnails.length} opcoes` : 'Sem frames';
   if (thumbnails.length) {
-    thumbnailGrid.querySelectorAll('[data-thumbnail-index]').forEach((button) => {
-      button.addEventListener('click', () => {
-        selectThumbnail(Number(button.dataset.thumbnailIndex));
-      });
-    });
+    thumbnailGrid.querySelectorAll('.thumbnail-card').forEach(wireThumbnailCard);
+    thumbnailShowMore.textContent = 'Exibir mais frames';
+    thumbnailShowMore.hidden = !(currentJob && currentHasMore);
     selectThumbnail(0);
-    thumbnailNote.textContent = 'Clique nos frames ou use os botoes laterais para comparar. A imagem principal carrega o PNG em resolucao original.';
+    thumbnailNote.textContent = currentJob && currentHasMore
+      ? 'Clique nos frames para ampliar. Use "Exibir mais frames" para buscar novos frames no video.'
+      : 'Clique nos frames ou use os botoes laterais para comparar. A imagem principal carrega o PNG em resolucao original.';
     return;
   }
 
+  thumbnailShowMore.hidden = true;
   thumbnailViewer.hidden = true;
   thumbnailNote.textContent = result.thumbnailError
     ? `Nao consegui extrair frames deste arquivo. Verifique se o FFmpeg esta instalado. Detalhe: ${result.thumbnailError}`
@@ -125,6 +163,32 @@ thumbnailPrev.addEventListener('click', () => {
 
 thumbnailNext.addEventListener('click', () => {
   selectThumbnail(currentThumbnailIndex + 1);
+});
+
+thumbnailShowMore.addEventListener('click', async () => {
+  if (!currentJob || !currentHasMore) return;
+  thumbnailShowMore.disabled = true;
+  const originalLabel = thumbnailShowMore.textContent;
+  thumbnailShowMore.textContent = 'Buscando mais frames...';
+  try {
+    const response = await fetch(`/api/frames/${encodeURIComponent(currentJob)}/more`, { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Nao consegui buscar mais frames.');
+
+    if (Array.isArray(result.thumbnails) && result.thumbnails.length) {
+      appendThumbnails(result.thumbnails);
+      thumbnailNote.textContent = `Mais ${result.thumbnails.length} frames extraidos do video. Role para ver as novas opcoes.`;
+    } else {
+      thumbnailNote.textContent = 'Nao ha mais frames para extrair deste video.';
+    }
+    currentHasMore = Boolean(result.hasMore);
+    thumbnailShowMore.hidden = !currentHasMore;
+  } catch (error) {
+    thumbnailNote.textContent = error.message;
+  } finally {
+    thumbnailShowMore.disabled = false;
+    thumbnailShowMore.textContent = originalLabel;
+  }
 });
 
 document.addEventListener('keydown', (event) => {
@@ -170,30 +234,63 @@ media.addEventListener('change', () => {
   fileName.textContent = media.files[0]?.name || 'MP4, MP3, M4A, WAV ou WEBM ate 25 MB';
 });
 
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
+function setBusy(isBusy, mode) {
+  submitButton.disabled = isBusy;
+  transcribeOnlyButton.disabled = isBusy;
+  framesOnlyButton.disabled = isBusy;
+  submitButton.textContent = isBusy && mode === 'full' ? 'Transcrevendo...' : 'Transcrição + Frames';
+  transcribeOnlyButton.textContent = isBusy && mode === 'transcribe' ? 'Transcrevendo...' : 'Apenas Transcrição';
+  framesOnlyButton.textContent = isBusy && mode === 'frames' ? 'Extraindo frames...' : 'Apenas Frames';
+}
+
+async function processMedia(mode) {
+  if (!media.files || !media.files.length) {
+    form.reportValidity();
+    return;
+  }
+
+  const framesOnly = mode === 'frames';
   actions.innerHTML = '';
   resetThumbnails();
   metrics.hidden = true;
   transcriptionTime.textContent = '';
   mediaDuration.textContent = '';
   runtimeUsed.textContent = '';
-  output.textContent = 'Enviando arquivo e transcrevendo... isso pode levar alguns minutos.';
-  if (form.useGpu.checked) {
+
+  if (framesOnly) {
+    output.textContent = 'Extraindo os frames do video... isso pode levar alguns instantes.';
+  } else if (useGpu.checked) {
     output.textContent = 'Enviando arquivo e transcrevendo com GPU... isso pode levar alguns minutos.';
+  } else {
+    output.textContent = 'Enviando arquivo e transcrevendo... isso pode levar alguns minutos.';
   }
-  submitButton.disabled = true;
-  submitButton.textContent = 'Transcrevendo...';
+
+  setBusy(true, mode);
   const requestStartedAt = performance.now();
 
   try {
     const data = new FormData(form);
-    const response = await fetch('/api/transcribe', {
+    if (!framesOnly) {
+      data.append('includeFrames', mode === 'full' ? 'true' : 'false');
+    }
+    const endpoint = framesOnly ? '/api/frames' : '/api/transcribe';
+    const response = await fetch(endpoint, {
       method: 'POST',
       body: data
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Falha na transcricao.');
+    if (!response.ok) {
+      throw new Error(result.error || (framesOnly ? 'Falha ao extrair os frames.' : 'Falha na transcricao.'));
+    }
+
+    if (framesOnly) {
+      const frameCount = Array.isArray(result.thumbnails) ? result.thumbnails.length : 0;
+      output.textContent = frameCount
+        ? 'Frames extraidos. Clique em um frame para ver em tamanho maior.'
+        : 'Nenhum frame foi extraido deste arquivo.';
+      renderThumbnails(result);
+      return;
+    }
 
     output.textContent = result.text || 'Transcricao concluida, mas sem texto retornado.';
     const browserElapsedSeconds = (performance.now() - requestStartedAt) / 1000;
@@ -225,13 +322,27 @@ form.addEventListener('submit', async (event) => {
         output.textContent = 'Nao foi possivel copiar o SRT.';
       });
     });
-    renderThumbnails(result);
+    if (mode === 'full') {
+      renderThumbnails(result);
+    }
   } catch (error) {
     output.textContent = error.message;
   } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = 'Transcrever agora';
+    setBusy(false, mode);
   }
+}
+
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  processMedia('full');
+});
+
+transcribeOnlyButton.addEventListener('click', () => {
+  processMedia('transcribe');
+});
+
+framesOnlyButton.addEventListener('click', () => {
+  processMedia('frames');
 });
 
 checkHealth().catch(() => {

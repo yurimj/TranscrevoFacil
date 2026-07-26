@@ -60,6 +60,21 @@ O servidor deve escutar exclusivamente em loopback (`127.0.0.1`, `localhost` ou 
 - releases devem incluir checksums, procedencia, avisos e textos de licenca exigidos;
 - qualquer credencial encontrada deve ser revogada, nao apenas removida do commit mais recente.
 
+## Catalogo de modificacoes
+
+Toda modificacao solicitada deve ser catalogada de forma detalhada para exposicao publica no GitHub. O registro fica em `CHANGELOG.md`, na raiz do repositorio, e deve ser atualizado na mesma entrega da alteracao, antes do commit.
+
+Cada entrada do catalogo deve conter:
+
+- data e versao correspondente (ou o marcador "Nao lancado" ate a proxima release);
+- o pedido original do usuario, resumido com fidelidade;
+- o que mudou em cada arquivo relevante, com o comportamento novo descrito de forma clara;
+- o motivo da mudanca e as decisoes de projeto adotadas;
+- o impacto no instalador, nas dependencias e nas demais premissas; quando nao houver impacto, isso deve ser declarado explicitamente;
+- instrucoes de teste ou validacao manual quando aplicavel.
+
+O catalogo e cumulativo: novas entradas sao adicionadas no topo e o historico anterior nunca e reescrito para apagar registros. A revisao do instalador exigida na primeira secao deste documento deve constar na entrada correspondente, mesmo que a conclusao seja "sem impacto".
+
 ## Criterios para uma versao publicavel
 
 Antes de gerar uma versao publica, devem ser validados em uma instalacao limpa:

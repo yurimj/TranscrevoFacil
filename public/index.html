@@ -45,12 +45,16 @@
           </div>
 
           <label class="gpu-option">
-            <input id="useGpu" name="useGpu" type="checkbox" />
+            <input id="useGpu" name="useGpu" type="checkbox" checked />
             <span id="gpuOptionLabel">Utilizar GPU como processamento</span>
           </label>
 
-          <button type="submit" id="submitButton">Transcrever agora</button>
-          <p class="hint">O processamento usa Whisper local. A aceleracao detecta automaticamente NVIDIA, AMD ou Intel; se a GPU falhar, a transcricao continua pela CPU.</p>
+          <div class="submit-row">
+            <button type="submit" id="submitButton">Transcrição + Frames</button>
+            <button type="button" id="transcribeOnlyButton" class="button-secondary">Apenas Transcrição</button>
+            <button type="button" id="framesOnlyButton" class="button-secondary">Apenas Frames</button>
+          </div>
+          <p class="hint">O processamento usa Whisper local. A aceleracao detecta automaticamente NVIDIA, AMD ou Intel; se a GPU falhar, a transcricao continua pela CPU. Use <strong>Apenas Transcrição</strong> para pular os frames ou <strong>Apenas Frames</strong> para extrair somente as imagens, sem transcrever.</p>
         </form>
 
         <section class="result" aria-live="polite">
@@ -76,6 +80,7 @@
               <span id="thumbnailCount"></span>
             </div>
             <div class="thumbnail-grid" id="thumbnailGrid"></div>
+            <button type="button" id="thumbnailShowMore" class="thumbnail-more" hidden>Exibir mais</button>
             <div class="thumbnail-viewer" id="thumbnailViewer" hidden>
               <div class="viewer-toolbar">
                 <button type="button" id="thumbnailPrev" aria-label="Frame anterior">‹</button>
