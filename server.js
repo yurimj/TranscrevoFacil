@@ -677,7 +677,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     app: 'transcrevofacil',
-    version: '0.2.3',
+    version: '0.2.4',
     engine: 'local-faster-whisper',
     model: whisperModel,
     device: cpuRuntime.device,
@@ -748,6 +748,9 @@ app.post('/api/transcribe', upload.single('media'), async (req, res, next) => {
       fsp.writeFile(srtPath, srtText, 'utf8')
     ]);
 
+    // Tempo total de processamento no servidor: transcricao + extracao de frames + gravacao.
+    const processingSeconds = Math.max(0.1, secondsFromMs(performance.now() - transcriptionStartedAt));
+
     res.json({
       id: crypto.randomUUID(),
       filename: file.originalname,
@@ -757,6 +760,7 @@ app.post('/api/transcribe', upload.single('media'), async (req, res, next) => {
       runtimeLabel: runtime.label,
       fallbackReason: runtime.fallbackReason || null,
       transcriptionSeconds,
+      processingSeconds,
       mediaDurationSeconds,
       text,
       srtText,
@@ -795,13 +799,17 @@ app.post('/api/frames', upload.single('media'), async (req, res, next) => {
     stableFilePath = path.join(uploadDir, `${file.filename}${originalExt}`);
     fs.renameSync(file.path, stableFilePath);
 
+    const processingStartedAt = performance.now();
     const mediaDurationSeconds = await probeMediaDurationSeconds(stableFilePath);
     const frameJob = await createFrameJob({ sourcePath: stableFilePath, originalExt, durationSeconds: mediaDurationSeconds });
+    // Tempo total de processamento no servidor: leitura da duracao + extracao dos frames.
+    const processingSeconds = Math.max(0.1, secondsFromMs(performance.now() - processingStartedAt));
 
     res.json({
       id: crypto.randomUUID(),
       filename: file.originalname,
       framesOnly: true,
+      processingSeconds,
       mediaDurationSeconds,
       job: frameJob.job,
       hasMore: frameJob.hasMore,

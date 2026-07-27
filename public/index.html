@@ -14,7 +14,6 @@
           <h1>TranscrevoFácil</h1>
           <p class="lead">Envie um video ou audio e transcreva localmente no seu computador, sem gastar tokens de API.</p>
         </div>
-        <div class="status" id="apiStatus">Verificando configuracao...</div>
       </section>
 
       <section class="workspace">
@@ -66,8 +65,8 @@
             <div class="actions" id="actions"></div>
           </div>
           <div class="metrics" id="metrics" hidden>
-            <p><strong>Processamento utilizado:</strong> <span id="runtimeUsed"></span></p>
-            <p><strong>Tempo para transcrever:</strong> <span id="transcriptionTime"></span></p>
+            <p id="runtimeMetric"><strong>Processamento utilizado:</strong> <span id="runtimeUsed"></span></p>
+            <p><strong>Tempo de processamento:</strong> <span id="processingTime"></span></p>
             <p><strong>Tempo total do video:</strong> <span id="mediaDuration"></span></p>
           </div>
           <pre id="output">Ainda nao ha transcricao.</pre>
