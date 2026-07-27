@@ -30,10 +30,6 @@ body {
 }
 
 .hero {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 24px;
-  align-items: end;
   margin-bottom: 28px;
 }
 
@@ -67,23 +63,6 @@ h2 {
   color: var(--muted);
   font-size: 1.15rem;
   line-height: 1.55;
-}
-
-.status {
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.75);
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.status.ok {
-  color: var(--brand-dark);
-}
-
-.status.warn {
-  color: var(--danger);
 }
 
 .workspace {

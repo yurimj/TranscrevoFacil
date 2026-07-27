@@ -6,11 +6,11 @@ const actions = document.querySelector('#actions');
 const submitButton = document.querySelector('#submitButton');
 const transcribeOnlyButton = document.querySelector('#transcribeOnlyButton');
 const framesOnlyButton = document.querySelector('#framesOnlyButton');
-const apiStatus = document.querySelector('#apiStatus');
 const metrics = document.querySelector('#metrics');
-const transcriptionTime = document.querySelector('#transcriptionTime');
+const processingTime = document.querySelector('#processingTime');
 const mediaDuration = document.querySelector('#mediaDuration');
 const runtimeUsed = document.querySelector('#runtimeUsed');
+const runtimeMetric = document.querySelector('#runtimeMetric');
 const useGpu = document.querySelector('#useGpu');
 const gpuOptionLabel = document.querySelector('#gpuOptionLabel');
 const thumbnailSection = document.querySelector('#thumbnailSection');
@@ -226,8 +226,6 @@ async function checkHealth() {
     gpuOptionLabel.textContent = 'Utilizar GPU como processamento';
     useGpu.title = acceleration.reason || 'Nenhuma GPU compativel foi detectada.';
   }
-  apiStatus.textContent = `Motor local: ${health.model}; CPU ${health.computeType}; ${acceleration.available ? acceleration.label : 'sem aceleracao por GPU'}; ate ${health.uploadLimitMb} MB`;
-  apiStatus.className = 'status ok';
 }
 
 media.addEventListener('change', () => {
@@ -253,7 +251,7 @@ async function processMedia(mode) {
   actions.innerHTML = '';
   resetThumbnails();
   metrics.hidden = true;
-  transcriptionTime.textContent = '';
+  processingTime.textContent = '';
   mediaDuration.textContent = '';
   runtimeUsed.textContent = '';
 
@@ -283,27 +281,33 @@ async function processMedia(mode) {
       throw new Error(result.error || (framesOnly ? 'Falha ao extrair os frames.' : 'Falha na transcricao.'));
     }
 
+    // Tempo de processamento: vale para qualquer modo (transcricao e/ou frames).
+    const browserElapsedSeconds = (performance.now() - requestStartedAt) / 1000;
+    const processingSeconds = Number(result.processingSeconds) > 0 ? result.processingSeconds : browserElapsedSeconds;
+    processingTime.textContent = formatDuration(processingSeconds) || 'Nao informado';
+
     if (framesOnly) {
       const frameCount = Array.isArray(result.thumbnails) ? result.thumbnails.length : 0;
       output.textContent = frameCount
         ? 'Frames extraidos. Clique em um frame para ver em tamanho maior.'
         : 'Nenhum frame foi extraido deste arquivo.';
+      mediaDuration.textContent = formatDuration(result.mediaDurationSeconds) || 'Nao informado';
+      runtimeMetric.hidden = true; // sem runtime de Whisper no modo Apenas Frames
+      metrics.hidden = false;
       renderThumbnails(result);
       return;
     }
 
     output.textContent = result.text || 'Transcricao concluida, mas sem texto retornado.';
-    const browserElapsedSeconds = (performance.now() - requestStartedAt) / 1000;
-    const transcriptionSeconds = Number(result.transcriptionSeconds) > 0 ? result.transcriptionSeconds : browserElapsedSeconds;
     const mediaDurationSeconds = Number(result.mediaDurationSeconds) > 0
       ? result.mediaDurationSeconds
       : durationFromSegments(result.segments);
 
-    transcriptionTime.textContent = formatDuration(transcriptionSeconds) || 'Nao informado';
     mediaDuration.textContent = formatDuration(mediaDurationSeconds) || 'Nao informado';
     runtimeUsed.textContent = result.fallbackReason
       ? `${result.runtimeLabel || result.device}. ${result.fallbackReason}`
       : (result.runtimeLabel || result.device || 'Nao informado');
+    runtimeMetric.hidden = false;
     metrics.hidden = false;
     actions.innerHTML = `
       <button type="button" class="copy-action" data-copy="text">Copiar texto</button>
@@ -345,7 +349,4 @@ framesOnlyButton.addEventListener('click', () => {
   processMedia('frames');
 });
 
-checkHealth().catch(() => {
-  apiStatus.textContent = 'Nao foi possivel verificar a configuracao.';
-  apiStatus.className = 'status warn';
-});
+checkHealth().catch(() => {});

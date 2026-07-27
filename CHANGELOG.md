@@ -5,6 +5,59 @@ para o TranscrevoFacil, conforme a premissa "Catalogo de modificacoes" descrita 
 [`premissas.md`](premissas.md). As entradas mais recentes ficam no topo e o historico
 anterior nunca e apagado.
 
+## 0.2.4 (2026-07-27)
+
+### Remocao do quadro de informacoes do motor local
+
+**Data:** 2026-07-27
+
+**Pedido do usuario:** remover da tela inicial o quadro que exibia modelo local, tipo de CPU, GPU detectada e limite de upload.
+
+**O que mudou:**
+
+- `public/index.html`: removido o elemento visual `#apiStatus`.
+- `public/app.js`: removidas as escritas no quadro; a consulta de saude continua configurando normalmente a opcao de GPU.
+- `public/styles.css`: removidos o layout e os estilos que existiam apenas para o quadro.
+
+**Impacto no instalador e nas dependencias:** nenhum.
+
+**Validacao executada:** interface carregada sem o quadro; consulta de saude e deteccao de GPU preservadas; suite automatizada aprovada.
+
+### "Tempo de processamento" para todos os modos
+
+**Data:** 2026-07-27
+
+**Pedido do usuario:** renomear o rotulo "Tempo para transcrever:" para "Tempo de processamento:", e passar a medir todo o processamento, seja transcricao ou frames.
+
+**O que mudou:**
+
+- `public/index.html`
+  - Rotulo "Tempo para transcrever:" -> "Tempo de processamento:". O `<span>` passou de `#transcriptionTime` para `#processingTime`; a linha "Processamento utilizado" ganhou `id="runtimeMetric"` para poder ser ocultada.
+- `public/app.js`
+  - As metricas passam a aparecer em **todos os modos**, inclusive "Apenas Frames" (antes so em transcricao). "Tempo de processamento" usa `result.processingSeconds` (fallback: tempo medido no navegador). No modo Apenas Frames a linha "Processamento utilizado" (runtime do Whisper) fica oculta, pois nao ha transcricao.
+- `server.js`
+  - `/api/transcribe` e `/api/frames` passam a retornar `processingSeconds` = tempo total de processamento no servidor (transcricao + frames, ou extracao de frames). `transcriptionSeconds` continua exposto como submedida da transcricao.
+
+**Impacto no instalador e nas dependencias:** nenhum.
+
+**Validacao executada:** endpoints retornam `processingSeconds` (frames=14s, transcricao=3s em testes); no navegador, Apenas Frames mostra "Tempo de processamento" + "Tempo total do video" com a linha de runtime oculta, e transcricao mostra as tres metricas.
+
+### Adocao do Express 5
+
+**Data:** 2026-07-27
+
+**Pedido do usuario:** manter/adotar o Express 5 (proposto pelo Dependabot no PR #2), apos testar a compatibilidade.
+
+**O que mudou:**
+
+- `package.json` / `pnpm-lock.yaml`: `express` 4.22.2 -> 5.2.1 (mesma versao do PR #2 do Dependabot; integridade conferida contra o npm oficial).
+
+**Validacao executada (em cima da master 0.2.3, antes de adotar):** servidor sobe sem erros; rotas com params nomeados (`/api/frames/:job/more`, `/api/thumbnails/:job/:file`, `/api/download/:file`), `express.static`, `express.json`, multer (upload), `res.json`, `res.download` e o middleware de origem/host testados -> todos 200/comportamento esperado. Nenhuma mudanca de codigo foi necessaria para o Express 5.
+
+**Observacao:** com o `express@5.2.1` na master, o PR #2 do Dependabot fica redundante e deve fechar automaticamente quando o commit chegar ao GitHub (ou pode ser fechado manualmente).
+
+**Impacto no instalador:** nenhum binario/DLL novo; apenas os pacotes npm empacotados mudam de versao (o `.iss` ja empacota `node_modules`).
+
 ## 0.2.3 (2026-07-26)
 
 ### Release 0.2.3: instalador regenerado com as mudancas acumuladas
