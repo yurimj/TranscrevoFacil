@@ -5,6 +5,49 @@ para o TranscrevoFacil, conforme a premissa "Catalogo de modificacoes" descrita 
 [`premissas.md`](premissas.md). As entradas mais recentes ficam no topo e o historico
 anterior nunca e apagado.
 
+## Nao lancado
+
+### Arrastar e soltar o arquivo funcionando de fato
+
+**Data:** 2026-08-03
+
+**Pedido do usuario:** ao arrastar um video para a area de upload, nada acontecia; o navegador abria o video em uma nova janela.
+
+**O que mudou:**
+
+- `public/index.html`: a area de upload ganhou `id="dropzone"` (o rotulo ja existia, mas nao havia nenhum tratamento de arrastar e soltar no codigo — so o texto "Escolha ou arraste seu arquivo"). O subtitulo padrao deixou de citar "ate 25 MB", numero que nao correspondia a nenhum limite real do aplicativo.
+- `public/app.js`
+  - Novos tratadores de `dragover`/`drop` no `document` que cancelam o comportamento padrao. Sem eles, soltar o arquivo em qualquer ponto da pagina faz o navegador navegar ate o arquivo — era exatamente isso que abria o video em outra janela.
+  - Novos tratadores em `#dropzone`: `dragover` destaca a area (classe `is-dragging`) e marca `dropEffect = 'copy'`; `dragleave` so remove o destaque quando o ponteiro sai de verdade da area (ignora a troca entre os filhos); `drop` aceita o primeiro arquivo solto.
+  - O arquivo escolhido passou a ficar em `selectedFile`, alimentado tanto pelo seletor quanto pelo arrastar e soltar; o `<input type="file">` continua sincronizado via `DataTransfer` para a validacao nativa do formulario, e o envio usa `data.set('media', selectedFile, ...)`, de modo que falhar essa sincronia nao impede transcrever.
+  - `acceptFile` recusa cedo formato invalido e arquivo acima do limite, com mensagem explicando o que fazer, em vez de gastar o envio inteiro para receber erro do servidor.
+  - O subtitulo da area passa a mostrar o nome e o tamanho do arquivo escolhido, e o limite real vindo de `/api/health`.
+- `public/styles.css`: novo estilo `.dropzone.is-dragging` (borda solida na cor da marca e fundo destacado) para dar retorno visual durante o arrasto.
+
+**Impacto no instalador e nas dependencias:** nenhum. Somente arquivos estaticos ja empacotados; nenhum binario, DLL, modelo, pacote ou variavel de ambiente novo.
+
+**Validacao executada:** com o servidor local, eventos `drop` sinteticos com `DataTransfer` na area de upload -> `defaultPrevented` verdadeiro, arquivo aceito, `input.files` sincronizado e subtitulo "meu-video.mp4 (3.0 MB)"; `drop` no `body` (fora da area) -> `defaultPrevented` verdadeiro, ou seja, o navegador nao abre mais o arquivo; `dragover`/`dragleave` ligam e desligam o destaque; arquivo `.txt` recusado com mensagem de formato e selecao limpa. Envio ponta a ponta de um arquivo solto para `POST /api/frames`: o upload chegou ao servidor e o FFmpeg processou os bytes recebidos.
+
+### Limite de upload de 2 GB elevado para 16 GB
+
+**Data:** 2026-08-03
+
+**Pedido do usuario:** ao transcrever um video, o aplicativo respondeu "Arquivo maior que 2048 MB.".
+
+**O que mudou:**
+
+- `server.js`
+  - `UPLOAD_LIMIT_MB` passou de 2048 para 16384 (16 GB) como padrao, e `UPLOAD_LIMIT_MB=0` agora desativa o limite. Valor ausente, vazio, negativo ou nao numerico volta ao padrao.
+  - Novo `formatUploadLimit`, usado na resposta de erro e em `/api/health` (novo campo `uploadLimitLabel`), para exibir "16 GB" em vez de "16384 MB".
+  - A resposta 413 passou a dizer o que fazer: ajustar `UPLOAD_LIMIT_MB` no `.env` (0 remove o limite) e reiniciar.
+- `.env.example`, `scripts/install-runtime.ps1` e `README.md`: novo padrao 16384 e documentacao da opcao `0`.
+
+**Motivo e decisoes de projeto:** o teto de 2 GB era arbitrario e nao protegia nada de concreto — o aplicativo escuta apenas em loopback, e o multer grava o upload direto em disco (o arquivo nunca e carregado na memoria), entao o limite real e o espaco livre. Videos longos ou em alta resolucao passam de 2 GB com facilidade. Optou-se por um teto alto e explicito (16 GB) em vez de remover o limite por padrao, para que um arquivo errado ainda seja recusado rapidamente; quem quiser pode zerar o limite.
+
+**Impacto no instalador e nas dependencias:** nenhum binario, DLL, modelo ou pacote novo. O instalador reescreve o `.env` com `UPLOAD_LIMIT_MB=16384` — instalacoes ja existentes continuam com o `.env` antigo (2048) ate serem atualizadas pelo instalador ou terem o arquivo editado a mao.
+
+**Validacao executada:** `/api/health` com o novo padrao retorna `uploadLimitMb: 16384` e `uploadLimitLabel: "16 GB"`, e a tela mostra "... ate 16 GB". Com `UPLOAD_LIMIT_MB=1`, envio de um arquivo de 2,2 MB -> HTTP 413 com a mensagem nova. Com `UPLOAD_LIMIT_MB=0`, o mesmo arquivo e aceito (HTTP 200). Suite automatizada (`node --test`) aprovada.
+
 ## 0.2.4 (2026-07-27)
 
 ### Remocao do quadro de informacoes do motor local

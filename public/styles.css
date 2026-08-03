@@ -95,6 +95,12 @@ h2 {
   cursor: pointer;
 }
 
+.dropzone.is-dragging {
+  border-color: var(--brand);
+  border-style: solid;
+  background: rgba(15, 118, 110, 0.08);
+}
+
 .dropzone input {
   position: absolute;
   inline-size: 1px;
