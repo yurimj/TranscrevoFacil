@@ -1,6 +1,6 @@
 {
   "name": "transcrevo-facil",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@11.15.1",
