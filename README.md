@@ -50,7 +50,7 @@ Nunca versione `.env`, mídias, transcrições, modelos, runtimes ou credenciais
 Copie `.env.example` para `.env` somente quando precisar alterar os padrões. Opções principais:
 
 - `WHISPER_MODEL`: `tiny`, `base`, `small`, `medium`, `large-v3` ou caminho de um modelo local;
-- `UPLOAD_LIMIT_MB`: limite máximo de upload;
+- `UPLOAD_LIMIT_MB`: limite máximo de upload em MB (padrão `16384`, ou seja 16 GB); use `0` para remover o limite;
 - `THUMBNAIL_FRAME_COUNT`: quantidade de frames extraídos;
 - `WHISPER_CPU_THREADS`: `0` seleciona automaticamente;
 - `WHISPER_NUM_WORKERS`: quantidade de workers;

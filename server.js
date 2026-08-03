@@ -15,7 +15,15 @@ import { isAllowedOrigin, isLoopbackHostname, resolveInside } from './lib/securi
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '127.0.0.1';
-const uploadLimitMb = Number(process.env.UPLOAD_LIMIT_MB || 2048);
+// Limite de upload: o app roda apenas em loopback e o arquivo e gravado direto em disco
+// (sem passar pela memoria), entao o teto real e o espaco livre. `UPLOAD_LIMIT_MB=0`
+// desativa o limite; valor ausente ou invalido cai no padrao.
+const rawUploadLimitMb = String(process.env.UPLOAD_LIMIT_MB ?? '').trim();
+const parsedUploadLimitMb = Number(rawUploadLimitMb);
+const uploadLimitMb = rawUploadLimitMb && Number.isFinite(parsedUploadLimitMb) && parsedUploadLimitMb >= 0
+  ? parsedUploadLimitMb
+  : 16384;
+const uploadLimitBytes = uploadLimitMb > 0 ? uploadLimitMb * 1024 * 1024 : Infinity;
 const pythonBin = process.env.PYTHON_BIN || 'python';
 const whisperModel = process.env.WHISPER_MODEL || 'small';
 const whisperComputeType = process.env.WHISPER_COMPUTE_TYPE || 'float32';
@@ -59,7 +67,7 @@ const allowedExtensions = new Set(['.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.w
 const videoExtensions = new Set(['.mp4', '.mpeg', '.webm']);
 const upload = multer({
   dest: uploadDir,
-  limits: { fileSize: uploadLimitMb * 1024 * 1024 },
+  limits: { fileSize: uploadLimitBytes },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!allowedExtensions.has(ext)) {
@@ -96,6 +104,15 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '16kb' }));
 app.use(express.static(path.join(root, 'public')));
+
+function formatUploadLimit(mb) {
+  if (mb <= 0) return 'sem limite';
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${Number.isInteger(gb) ? gb : gb.toFixed(1)} GB`;
+  }
+  return `${mb} MB`;
+}
 
 function timestampName(filename) {
   const base = sanitize(path.basename(filename, path.extname(filename))) || 'transcricao';
@@ -691,6 +708,7 @@ app.get('/api/health', (_req, res) => {
     cudaAvailable,
     vulkanAvailable,
     uploadLimitMb,
+    uploadLimitLabel: formatUploadLimit(uploadLimitMb),
     supportedFormats: [...allowedExtensions].map((ext) => ext.slice(1))
   });
 });
@@ -900,7 +918,9 @@ app.get('/api/thumbnails/:job/:file', (req, res) => {
 
 app.use((error, _req, res, _next) => {
   if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-    res.status(413).json({ error: `Arquivo maior que ${uploadLimitMb} MB.` });
+    res.status(413).json({
+      error: `Arquivo maior que ${formatUploadLimit(uploadLimitMb)}. Ajuste UPLOAD_LIMIT_MB no arquivo .env (0 remove o limite) e reinicie o TranscrevoFacil.`
+    });
     return;
   }
   res.status(500).json({ error: error.message || 'Nao foi possivel transcrever agora.' });

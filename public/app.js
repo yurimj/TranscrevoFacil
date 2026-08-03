@@ -1,5 +1,6 @@
 const form = document.querySelector('#transcribeForm');
 const media = document.querySelector('#media');
+const dropzone = document.querySelector('#dropzone');
 const fileName = document.querySelector('#fileName');
 const output = document.querySelector('#output');
 const actions = document.querySelector('#actions');
@@ -28,6 +29,16 @@ let currentThumbnails = [];
 let currentThumbnailIndex = 0;
 let currentJob = null;
 let currentHasMore = false;
+
+const allowedExtensions = ['.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm'];
+const baseDropSubtitle = 'MP4, MP3, M4A, WAV, WEBM, MPEG ou MPGA';
+// Preenchidos pela consulta de saude; ate la nao ha limite conhecido no cliente
+// (o servidor continua sendo quem decide).
+let dropSubtitle = baseDropSubtitle;
+let uploadLimitBytes = Infinity;
+let uploadLimitLabel = '';
+// Fonte da verdade do arquivo escolhido, tanto pelo seletor quanto por arrastar e soltar.
+let selectedFile = null;
 
 function formatDuration(seconds) {
   const parsedSeconds = Number(seconds);
@@ -212,10 +223,108 @@ async function copyText(text, button) {
   }, 1600);
 }
 
+function formatFileSize(bytes) {
+  const mb = Number(bytes) / (1024 * 1024);
+  if (!Number.isFinite(mb)) return 'tamanho desconhecido';
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+}
+
+function fileExtension(name) {
+  const dot = String(name).lastIndexOf('.');
+  return dot >= 0 ? String(name).slice(dot).toLowerCase() : '';
+}
+
+function clearSelectedFile(message) {
+  selectedFile = null;
+  media.value = '';
+  fileName.textContent = dropSubtitle;
+  if (message) output.textContent = message;
+}
+
+// Aceita o arquivo vindo do seletor ou do arrastar e soltar, recusando cedo o que o
+// servidor recusaria depois (formato e tamanho), para nao gastar o envio inteiro.
+function acceptFile(file) {
+  if (!file) {
+    clearSelectedFile();
+    return;
+  }
+  if (!allowedExtensions.includes(fileExtension(file.name))) {
+    clearSelectedFile(`Formato nao suportado (${file.name}). Envie MP4, MP3, M4A, WAV, WEBM, MPEG ou MPGA.`);
+    return;
+  }
+  if (file.size > uploadLimitBytes) {
+    clearSelectedFile(
+      `"${file.name}" tem ${formatFileSize(file.size)} e o limite atual e ${uploadLimitLabel}. `
+      + 'Ajuste UPLOAD_LIMIT_MB no arquivo .env (0 remove o limite) e reinicie o TranscrevoFacil.'
+    );
+    return;
+  }
+  selectedFile = file;
+  fileName.textContent = `${file.name} (${formatFileSize(file.size)})`;
+}
+
+function isDraggingFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files');
+}
+
+// Sem estes dois handlers no documento, soltar o arquivo em qualquer ponto da pagina faz
+// o navegador abrir o video em vez de entregar o arquivo ao formulario.
+document.addEventListener('dragover', (event) => {
+  event.preventDefault();
+});
+
+document.addEventListener('drop', (event) => {
+  event.preventDefault();
+});
+
+dropzone.addEventListener('dragover', (event) => {
+  if (!isDraggingFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  dropzone.classList.add('is-dragging');
+});
+
+dropzone.addEventListener('dragleave', (event) => {
+  // dragleave tambem dispara ao passar entre os filhos da area; so desliga ao sair de fato.
+  if (dropzone.contains(event.relatedTarget)) return;
+  dropzone.classList.remove('is-dragging');
+});
+
+dropzone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  dropzone.classList.remove('is-dragging');
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+
+  acceptFile(file);
+  if (!selectedFile) return;
+  // Mantem o <input type="file"> em sincronia para a validacao nativa do formulario;
+  // o envio em si usa selectedFile, entao falhar aqui nao impede transcrever.
+  try {
+    const transfer = new DataTransfer();
+    transfer.items.add(selectedFile);
+    media.files = transfer.files;
+  } catch {
+    // Navegador sem DataTransfer: segue apenas com selectedFile.
+  }
+});
+
 async function checkHealth() {
   const response = await fetch('/api/health');
   const health = await response.json();
   const acceleration = health.acceleration || {};
+  const limitMb = Number(health.uploadLimitMb);
+  if (Number.isFinite(limitMb) && limitMb > 0) {
+    uploadLimitBytes = limitMb * 1024 * 1024;
+    uploadLimitLabel = health.uploadLimitLabel || `${limitMb} MB`;
+    dropSubtitle = `${baseDropSubtitle} ate ${uploadLimitLabel}`;
+  } else {
+    uploadLimitBytes = Infinity;
+    uploadLimitLabel = 'sem limite';
+    dropSubtitle = baseDropSubtitle;
+  }
+  if (!selectedFile) fileName.textContent = dropSubtitle;
   if (acceleration.available) {
     useGpu.disabled = false;
     gpuOptionLabel.textContent = 'Utilizar GPU como processamento';
@@ -229,7 +338,7 @@ async function checkHealth() {
 }
 
 media.addEventListener('change', () => {
-  fileName.textContent = media.files[0]?.name || 'MP4, MP3, M4A, WAV ou WEBM ate 25 MB';
+  acceptFile(media.files[0] || null);
 });
 
 function setBusy(isBusy, mode) {
@@ -242,7 +351,7 @@ function setBusy(isBusy, mode) {
 }
 
 async function processMedia(mode) {
-  if (!media.files || !media.files.length) {
+  if (!selectedFile) {
     form.reportValidity();
     return;
   }
@@ -268,6 +377,8 @@ async function processMedia(mode) {
 
   try {
     const data = new FormData(form);
+    // Garante o arquivo escolhido mesmo quando ele veio de arrastar e soltar.
+    data.set('media', selectedFile, selectedFile.name);
     if (!framesOnly) {
       data.append('includeFrames', mode === 'full' ? 'true' : 'false');
     }
