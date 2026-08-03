@@ -1,5 +1,5 @@
 ﻿#define MyAppName "TranscrevoFácil"
-#define MyAppVersion "0.2.4"
+#define MyAppVersion "0.2.5"
 #define MyAppPublisher "TranscrevoFácil"
 #define MyAppExeName "scripts\start-transcrevofacil.ps1"
 

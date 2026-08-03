@@ -16,13 +16,10 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '127.0.0.1';
 // Limite de upload: o app roda apenas em loopback e o arquivo e gravado direto em disco
-// (sem passar pela memoria), entao o teto real e o espaco livre. `UPLOAD_LIMIT_MB=0`
-// desativa o limite; valor ausente ou invalido cai no padrao.
-const rawUploadLimitMb = String(process.env.UPLOAD_LIMIT_MB ?? '').trim();
-const parsedUploadLimitMb = Number(rawUploadLimitMb);
-const uploadLimitMb = rawUploadLimitMb && Number.isFinite(parsedUploadLimitMb) && parsedUploadLimitMb >= 0
-  ? parsedUploadLimitMb
-  : 16384;
+// (sem passar pela memoria), entao o teto real e o espaco livre. Por isso o padrao e 0,
+// que significa "sem limite"; qualquer valor positivo em MB volta a limitar o upload.
+const parsedUploadLimitMb = Number(String(process.env.UPLOAD_LIMIT_MB ?? '').trim());
+const uploadLimitMb = Number.isFinite(parsedUploadLimitMb) && parsedUploadLimitMb > 0 ? parsedUploadLimitMb : 0;
 const uploadLimitBytes = uploadLimitMb > 0 ? uploadLimitMb * 1024 * 1024 : Infinity;
 const pythonBin = process.env.PYTHON_BIN || 'python';
 const whisperModel = process.env.WHISPER_MODEL || 'small';
@@ -694,7 +691,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     app: 'transcrevofacil',
-    version: '0.2.4',
+    version: '0.2.5',
     engine: 'local-faster-whisper',
     model: whisperModel,
     device: cpuRuntime.device,
