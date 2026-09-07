@@ -16,7 +16,7 @@
   "dependencies": {
     "dotenv": "17.4.2",
     "express": "5.2.1",
-    "multer": "2.2.0",
+    "multer": "2.3.0",
     "sanitize-filename": "1.6.4"
   }
 }
