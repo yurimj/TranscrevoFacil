@@ -19,6 +19,8 @@ anterior nunca e apagado.
 
 **Validacao:** `pnpm audit --prod --audit-level high` passou sem vulnerabilidades conhecidas apos atualizar as dependencias. A publicacao dos anexos depende da aprovacao dos testes, verificacoes e teste de instalacao limpa do workflow da tag.
 
+**Publicacao:** o build da tag foi aprovado, incluindo instalacao limpa. Para evitar baixar e reenviar aproximadamente 1,2 GB por uma conexao local lenta, `.github/workflows/windows-installer.yml` ganhou uma operacao manual para publicar o artefato de um build existente. A operacao exige build aprovado da mesma tag/commit, confere SHA-256, inclui `BUILD-PROVENANCE.json` e publica somente uma pre-release que esteja em rascunho. O caminho normal de build continua disponivel. Essa melhoria do workflow foi feita depois da tag, sem alterar o codigo do aplicativo ja compilado.
+
 ### Inicializacao autonoma pelo atalho depois de reiniciar o Windows
 
 **Data:** 2026-10-19
