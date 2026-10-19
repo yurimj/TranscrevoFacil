@@ -225,6 +225,7 @@ $configuration = @(
   'HOST=127.0.0.1',
   "DATA_ROOT=$(Join-Path $env:LOCALAPPDATA 'TranscrevoFacil\data')",
   'UPLOAD_LIMIT_MB=0',
+  'UPDATE_CHECK=1',
   "PYTHON_BIN=$PythonExe",
   "FFMPEG_BIN=$FfmpegExe",
   'THUMBNAIL_FRAME_COUNT=80',

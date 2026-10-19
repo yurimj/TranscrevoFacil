@@ -7,10 +7,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
 import multer from 'multer';
 import sanitize from 'sanitize-filename';
 import { detectGpuAdapters, selectGpuBackend } from './lib/hardware.js';
 import { isAllowedOrigin, isLoopbackHostname, resolveInside } from './lib/security.js';
+import { buildUpdateStatus, isTrustedReleaseUrl, parseChecksums } from './lib/updates.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -49,6 +52,14 @@ const whisperCppModel = process.env.WHISPER_CPP_MODEL || path.join(root, 'runtim
 const dataRoot = process.env.DATA_ROOT ? path.resolve(process.env.DATA_ROOT) : root;
 const uploadDir = path.join(dataRoot, 'uploads');
 const transcriptDir = path.join(dataRoot, 'transcripts');
+const updateDir = path.join(dataRoot, 'updates');
+// Detector de atualizacao: e a unica saida de rede do aplicativo. Consulta o release mais
+// recente do repositorio publico com um GET sem autenticacao e sem nenhum identificador do
+// usuario. `UPDATE_CHECK=0` desliga a consulta por completo.
+const updateCheckEnabled = String(process.env.UPDATE_CHECK ?? '1').trim() !== '0';
+const updateRepository = process.env.UPDATE_REPOSITORY || 'yurimj/TranscrevoFacil';
+const updateCacheTtlMs = Math.max(60 * 1000, Number(process.env.UPDATE_CACHE_TTL_MS || 6 * 60 * 60 * 1000));
+const appVersion = readAppVersion();
 const pathSeparator = process.platform === 'win32' ? ';' : ':';
 const thumbnailDir = path.join(transcriptDir, 'thumbnails');
 
@@ -101,6 +112,16 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '16kb' }));
 app.use(express.static(path.join(root, 'public')));
+
+// A versao vem do package.json para nao existir um segundo lugar a atualizar a cada release
+// (o detector de atualizacao compara justamente contra ela).
+function readAppVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
 function formatUploadLimit(mb) {
   if (mb <= 0) return 'sem limite';
@@ -691,7 +712,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     app: 'transcrevofacil',
-    version: '0.2.5',
+    version: appVersion,
     engine: 'local-faster-whisper',
     model: whisperModel,
     device: cpuRuntime.device,
@@ -911,6 +932,174 @@ app.get('/api/thumbnails/:job/:file', (req, res) => {
   }
 
   res.sendFile(resolvedTarget);
+});
+
+// ---------------------------------------------------------------------------
+// Detector de atualizacao
+// ---------------------------------------------------------------------------
+
+let updateCache = null;
+let updateDownload = { state: 'ocioso' };
+
+function githubHeaders() {
+  // O User-Agent e exigido pela API do GitHub. Manda so nome e versao do aplicativo:
+  // nenhum dado do usuario, nenhum identificador de instalacao.
+  return {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': `TranscrevoFacil/${appVersion}`,
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+}
+
+async function fetchLatestRelease() {
+  const response = await fetch(`https://api.github.com/repos/${updateRepository}/releases/latest`, {
+    headers: githubHeaders(),
+    signal: AbortSignal.timeout(15000)
+  });
+  if (response.status === 404) throw new Error('Nenhum release publicado foi encontrado.');
+  if (!response.ok) throw new Error(`O GitHub respondeu HTTP ${response.status}.`);
+  return response.json();
+}
+
+async function readUpdateStatus({ force = false } = {}) {
+  if (!updateCheckEnabled) {
+    return { enabled: false, currentVersion: appVersion, updateAvailable: false };
+  }
+  const fresh = updateCache && Date.now() - updateCache.checkedAt < updateCacheTtlMs;
+  if (fresh && !force) return { ...updateCache.status, checkedAt: updateCache.checkedAt };
+
+  const release = await fetchLatestRelease();
+  const status = { enabled: true, ...buildUpdateStatus({ currentVersion: appVersion, release }) };
+  updateCache = { checkedAt: Date.now(), status };
+  return { ...status, checkedAt: updateCache.checkedAt };
+}
+
+async function fetchChecksum(checksumAsset, fileName) {
+  if (!checksumAsset || !isTrustedReleaseUrl(checksumAsset.url)) {
+    throw new Error('O release nao publicou SHA256SUMS.txt; o download foi cancelado por seguranca.');
+  }
+  const response = await fetch(checksumAsset.url, { headers: githubHeaders(), signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`Nao consegui ler os checksums do release (HTTP ${response.status}).`);
+  const expected = parseChecksums(await response.text()).get(fileName);
+  if (!expected) throw new Error(`O SHA256SUMS.txt do release nao cobre ${fileName}.`);
+  return expected;
+}
+
+// Baixa o instalador em um arquivo .parte, conferindo o SHA-256 durante o proprio fluxo, e
+// so promove para o nome final quando o hash publicado no release confere.
+async function runUpdateDownload(status) {
+  const asset = status.asset;
+  const target = resolveInside(updateDir, asset.name);
+  if (!target) throw new Error('O release trouxe um nome de arquivo invalido.');
+  if (!isTrustedReleaseUrl(asset.url)) throw new Error('O endereco de download do release nao e do GitHub.');
+
+  const expectedHash = await fetchChecksum(status.checksumAsset, asset.name);
+  await fsp.mkdir(updateDir, { recursive: true });
+  const partialPath = `${target}.parte`;
+
+  const response = await fetch(asset.url, { headers: githubHeaders(), redirect: 'follow' });
+  if (!response.ok || !response.body) throw new Error(`O download falhou (HTTP ${response.status}).`);
+
+  updateDownload.totalBytes = Number(response.headers.get('content-length')) || asset.size || 0;
+  const hash = crypto.createHash('sha256');
+
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body),
+      async function* (source) {
+        for await (const chunk of source) {
+          hash.update(chunk);
+          updateDownload.receivedBytes += chunk.length;
+          yield chunk;
+        }
+      },
+      fs.createWriteStream(partialPath)
+    );
+
+    const actualHash = hash.digest('hex');
+    if (actualHash !== expectedHash) {
+      throw new Error('O instalador baixado nao confere com o SHA-256 publicado no release.');
+    }
+    await fsp.rm(target, { force: true });
+    await fsp.rename(partialPath, target);
+    return target;
+  } catch (error) {
+    await fsp.rm(partialPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+app.get('/api/update', async (req, res) => {
+  try {
+    const status = await readUpdateStatus({ force: req.query.force === '1' });
+    res.json({ ...status, download: updateDownload });
+  } catch (error) {
+    res.json({
+      enabled: updateCheckEnabled,
+      currentVersion: appVersion,
+      updateAvailable: false,
+      error: error.message || 'Nao consegui consultar as atualizacoes.',
+      download: updateDownload
+    });
+  }
+});
+
+app.post('/api/update/download', async (req, res, next) => {
+  try {
+    if (!updateCheckEnabled) {
+      res.status(409).json({ error: 'A verificacao de atualizacoes esta desligada (UPDATE_CHECK=0).' });
+      return;
+    }
+    if (updateDownload.state === 'baixando') {
+      res.json(updateDownload);
+      return;
+    }
+
+    const status = await readUpdateStatus();
+    if (!status.updateAvailable || !status.asset) {
+      res.status(409).json({ error: 'Nao ha instalador novo para baixar.' });
+      return;
+    }
+
+    updateDownload = {
+      state: 'baixando',
+      version: status.latestVersion,
+      fileName: status.asset.name,
+      receivedBytes: 0,
+      totalBytes: status.asset.size || 0,
+      filePath: null,
+      error: null
+    };
+    res.json(updateDownload);
+
+    // Segue em segundo plano: o cliente acompanha por GET /api/update/download.
+    runUpdateDownload(status)
+      .then((filePath) => {
+        updateDownload = { ...updateDownload, state: 'concluido', filePath, receivedBytes: updateDownload.totalBytes };
+      })
+      .catch((error) => {
+        updateDownload = { ...updateDownload, state: 'falhou', error: error.message || 'O download falhou.' };
+      });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/update/download', (_req, res) => {
+  res.json(updateDownload);
+});
+
+app.post('/api/update/reveal', (_req, res) => {
+  const fileName = updateDownload.state === 'concluido' ? path.basename(updateDownload.filePath || '') : '';
+  const target = fileName ? resolveInside(updateDir, fileName) : null;
+  if (!target || !fs.existsSync(target)) {
+    res.status(404).json({ error: 'O instalador baixado nao foi encontrado.' });
+    return;
+  }
+  // Abre o Explorer com o arquivo selecionado. O aplicativo nao executa o instalador
+  // sozinho: quem decide instalar e o usuario.
+  spawn('explorer.exe', [`/select,${target}`], { detached: true, stdio: 'ignore' }).unref();
+  res.json({ ok: true, filePath: target });
 });
 
 app.use((error, _req, res, _next) => {

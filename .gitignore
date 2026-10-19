@@ -4,6 +4,7 @@ node_modules/
 !.env.example
 uploads/
 transcripts/
+updates/
 npm-debug.log*
 *.log
 logs/

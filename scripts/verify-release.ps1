@@ -37,6 +37,7 @@ try {
     '(^|/)\.env$',
     '(^|/)uploads/',
     '(^|/)transcripts/',
+    '(^|/)updates/',
     '(^|/)runtime/',
     '(^|/)__pycache__/',
     '\.py[co]$',
@@ -48,7 +49,7 @@ try {
     }
   }
 
-  foreach ($path in @('.env', 'uploads/arquivo.mp4', 'transcripts/arquivo.txt', 'runtime/arquivo.dll', 'scripts/__pycache__/teste.pyc')) {
+  foreach ($path in @('.env', 'uploads/arquivo.mp4', 'transcripts/arquivo.txt', 'updates/TranscrevoFacil-Setup-0.0.0.exe', 'runtime/arquivo.dll', 'scripts/__pycache__/teste.pyc')) {
     git check-ignore --quiet -- $path
     if ($LASTEXITCODE -ne 0) { throw "Caminho sensivel nao esta ignorado: $path" }
   }

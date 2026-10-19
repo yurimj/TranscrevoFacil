@@ -46,6 +46,8 @@ O instalador deve criar atalhos no Menu Iniciar e, quando selecionado, na Area d
 7. aguarde a resposta da rota de saude;
 8. abra o endereco correto do software no navegador padrao.
 
+Essa responsabilidade vale a cada abertura, inclusive depois de reiniciar o Windows: o usuario nao deve iniciar servidor, servico, terminal ou dependencia manualmente. Todos os processos locais necessarios devem ser iniciados pelo inicializador sob demanda. Cliques simultaneos devem reutilizar uma unica instancia, mesmo quando a porta preferida voltar a ficar livre. A verificacao local nao deve depender de proxy, PATH herdado ou servicos de gerenciamento do Windows. O inicializador deve registrar as etapas em logs e apresentar uma mensagem compreensivel quando nao conseguir concluir a abertura.
+
 O servidor deve escutar exclusivamente em loopback (`127.0.0.1`, `localhost` ou `::1`), validar o cabecalho Host e rejeitar origens externas. Transcricoes, uploads e logs do usuario devem ficar fora dos arquivos do programa e nunca podem ser enviados para a rede sem consentimento explicito.
 
 ## Repositorio publico e cadeia de fornecimento

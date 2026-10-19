@@ -5,6 +5,69 @@ para o TranscrevoFacil, conforme a premissa "Catalogo de modificacoes" descrita 
 [`premissas.md`](premissas.md). As entradas mais recentes ficam no topo e o historico
 anterior nunca e apagado.
 
+## 0.2.6 (2026-10-19)
+
+### Preparacao da release 0.2.6
+
+**Data:** 2026-10-19
+
+**Pedido do usuario:** fazer commit, push e publicar uma release com as alteracoes pendentes.
+
+**O que mudou:** `package.json` e `installer/TranscrevoFacil.iss` passam a versao 0.2.6. O catalogo agrupa as melhorias do inicializador e do detector de atualizacoes nesta versao. `package.json` atualiza Multer de 2.2.0 para 2.4.0; `pnpm-lock.yaml` atualiza tambem dependencias transitivas, incluindo `qs` e `proxy-addr`, para eliminar os oito alertas encontrados na auditoria anterior ao build.
+
+**Impacto no instalador e nas dependencias:** instalador Windows deve ser recompilado a partir da tag e validado em runner limpo pelo workflow existente, que inclui os novos testes do inicializador. Nao ha runtimes nativos, DLLs ou modelos novos. Sem certificado Authenticode configurado, a publicacao e uma pre-release de teste, conforme `premissas.md`; nao representa uma versao final assinada nem validacao de toda a matriz de hardware.
+
+**Validacao:** `pnpm audit --prod --audit-level high` passou sem vulnerabilidades conhecidas apos atualizar as dependencias. A publicacao dos anexos depende da aprovacao dos testes, verificacoes e teste de instalacao limpa do workflow da tag.
+
+### Inicializacao autonoma pelo atalho depois de reiniciar o Windows
+
+**Data:** 2026-10-19
+
+**Pedido do usuario:** confirmar a premissa de que o executavel deve iniciar tudo que precisa para funcionar e corrigir a abertura do TranscrevoFacil depois de reiniciar o PC.
+
+**O que mudou:**
+
+- `premissas.md`: explicita a obrigacao ja existente de iniciar os processos necessarios a cada abertura, inclusive apos reiniciar o Windows, sem exigir servidor, servico ou terminal iniciado manualmente.
+- `scripts/start-transcrevofacil.ps1`: serializa aberturas simultaneas com mutex; procura uma instancia saudavel antes de escolher uma porta livre; memoriza a ultima porta e sempre valida sua saude; ignora estado antigo ou corrompido; verifica portas por bind local, sem depender de WMI/NetTCPIP; consulta a saude sem proxy; detecta encerramento precoce do servidor; registra etapas em `logs/launcher.log`. As opcoes `-NoBrowser` e `-NonInteractive` permitem validar o mesmo caminho do atalho sem abrir janelas. Uma instancia ativa pode ser reaberta sem repetir a importacao dos runtimes.
+- `installer/TranscrevoFacil.iss`: usa o caminho absoluto do Windows PowerShell nos atalhos e na abertura apos instalar.
+- `test/launcher.test.js`: cobre porta ocupada/livre, reutilizacao com porta preferida livre, estado corrompido ou desatualizado, escolha de porta alternativa e esgotamento de portas.
+- `scripts/test-installed-release.ps1`: inclui abertura pelo inicializador real com 3000 ocupada e reabertura da mesma instancia depois de liberar essa porta.
+
+**Diagnostico e decisoes:** havia registros antigos de Node.js ausente, embora o binario esteja presente. A falha original apos reboot nao se repetiu durante esta verificacao. Foi confirmada uma falha na busca de instancia: o algoritmo anterior escolhia a primeira porta livre antes de procurar o aplicativo nas portas seguintes. A correcao tambem elimina a disputa entre dois inicializadores simultaneos e acrescenta logs para identificar falhas futuras. Os processos sao iniciados sob demanda pelo atalho.
+
+**Impacto no instalador e nas dependencias:** revisado o empacotamento do inicializador e dos atalhos; nenhum pacote, DLL, modelo ou servico Windows novo. A correcao do inicializador foi aplicada tambem a instalacao existente deste PC, com backup do script anterior. Nenhum instalador novo foi gerado nesta entrega.
+
+**Validacao executada:** 18 testes aprovados em `node --test` e `scripts/verify-release.ps1` aprovado. Na instalacao existente, Windows PowerShell 5.1 iniciou o servidor desligado com PATH minimo e duas chamadas simultaneas, ambas com codigo zero e apenas um servidor. Com a porta 3000 bloqueada, iniciou em outra porta; ao liberar 3000, reutilizou a instancia existente. Rota de saude confirmou o aplicativo ativo. Reinicio completo do Windows e instalacao/desinstalacao limpa nao foram executados nesta sessao.
+
+### Detector de atualizacao com download verificado do instalador
+
+**Data:** 2026-08-03
+
+**Pedido do usuario:** colocar um detector de atualizacao para puxar os novos instaladores publicados em release.
+
+**O que mudou:**
+
+- `lib/updates.js` (novo): regras puras do detector, sem rede e sem Express, para poderem ser testadas — leitura e comparacao numerica de versao (`0.2.10` > `0.2.9`, o que a comparacao por texto erraria), escolha do anexo `TranscrevoFacil-Setup-*.exe` e do `SHA256SUMS.txt` entre os anexos do release, leitura do arquivo de checksums nos dois formatos do `sha256sum` e validacao do host de download.
+- `test/updates.test.js` (novo): 7 testes cobrindo essas regras.
+- `server.js`
+  - Novas rotas: `GET /api/update` (consulta com cache), `POST /api/update/download` (inicia o download), `GET /api/update/download` (progresso) e `POST /api/update/reveal` (abre a pasta com o arquivo selecionado no Explorer).
+  - O download grava em `<DATA_ROOT>\updates` num arquivo `.parte`, calcula o SHA-256 durante o proprio fluxo e so promove para o nome final quando o hash confere com o publicado no release. Falha ou hash diferente apagam o arquivo parcial.
+  - A versao do aplicativo passou a ser lida do `package.json` em vez de ficar escrita a mao em `/api/health` — era um segundo lugar a atualizar a cada release, e agora e justamente contra ela que a comparacao acontece.
+- `public/index.html`, `public/app.js`, `public/styles.css`: faixa de aviso acima da area de trabalho, com versao disponivel, tamanho do instalador, link para as novidades, barra de progresso e botao que vira "Abrir pasta do instalador" ao terminar. Um download em andamento reaparece se a pagina for recarregada.
+- `.gitignore` e `scripts/verify-release.ps1`: `updates/` entrou na lista de diretorios ignorados e na verificacao que impede que dados do usuario sejam versionados — sem isso um instalador de 1,2 GB apareceria no `git status` de quem roda pelo repositorio.
+- `.env.example`, `scripts/install-runtime.ps1` e `README.md`: nova opcao `UPDATE_CHECK` (mais `UPDATE_REPOSITORY` e `UPDATE_CACHE_TTL_MS`, documentadas no README).
+
+**Motivo e decisoes de projeto:**
+
+- **A consulta e feita pelo servidor, nao pelo navegador.** A CSP do aplicativo usa `connect-src 'self'`, entao a pagina nao pode falar com a API do GitHub; fazer a consulta no Node evita afrouxar a CSP.
+- **Esta e a unica saida de rede do aplicativo.** Ate aqui o TranscrevoFacil nao acessava a rede em nenhum momento. A consulta e um `GET` sem autenticacao a API publica de releases; o unico cabecalho de identificacao e o `User-Agent` exigido pelo GitHub, com nome e versao do aplicativo. Nenhum dado do usuario, nenhum identificador de instalacao, nenhuma telemetria. `UPDATE_CHECK=0` desliga a consulta e devolve o comportamento totalmente offline.
+- **Download so do GitHub e so com hash conferido.** A URL vem de uma resposta da API, entao e tratada como dado externo: o host precisa ser `github.com` ou `*.githubusercontent.com`, e o release precisa publicar o `SHA256SUMS.txt` cobrindo o arquivo. Sem checksum, o download e recusado em vez de seguir sem conferencia.
+- **O aplicativo nao executa o instalador.** Ele baixa, confere e abre a pasta. Rodar um instalador de 1,2 GB sozinho e decisao do usuario.
+
+**Impacto no instalador e nas dependencias:** nenhum pacote novo — o `fetch` e o `AbortSignal.timeout` usados sao nativos do Node 24 ja empacotado. Nenhum binario, DLL ou modelo novo. O `install-runtime.ps1` passa a escrever `UPDATE_CHECK=1` no `.env`; instalacoes existentes sem essa linha assumem o padrao ligado. O diretorio `updates` e criado sob o `DATA_ROOT`, que ja fica fora dos arquivos do programa.
+
+**Validacao executada:** `node --test` com 17 testes aprovados. Contra a API real do GitHub, com a versao local rebaixada para 0.2.3: `GET /api/update` detectou a 0.2.4, escolheu `TranscrevoFacil-Setup-0.2.4.exe` (1.185.863.841 bytes) e o `SHA256SUMS.txt`. O download completo foi executado ponta a ponta, com progresso avancando e o arquivo `.parte` crescendo em disco, e concluiu com o SHA-256 conferido contra o release. Com a versao real (0.2.5, igual ao ultimo release), `updateAvailable` fica falso e a faixa nao aparece.
+
 ## 0.2.5 (2026-08-03)
 
 ### Arrastar e soltar o arquivo funcionando de fato

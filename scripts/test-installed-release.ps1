@@ -83,6 +83,39 @@ try {
   }
 }
 
+# Exercita tambem o caminho real do atalho: uma porta ocupada por outro programa,
+# abertura com o servidor parado e reutilizacao quando 3000 volta a ficar livre.
+$PortBlocker = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 3000)
+$LauncherServerId = $null
+$Launcher = Join-Path $InstallRoot 'scripts\start-transcrevofacil.ps1'
+$PowerShellExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+function Invoke-InstalledLauncher {
+  $process = Start-Process -FilePath $PowerShellExe -WindowStyle Hidden -PassThru `
+    -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $Launcher + '" -NoBrowser -NonInteractive')
+  if (-not $process.WaitForExit(90000)) { throw 'O inicializador instalado excedeu o prazo.' }
+  if ($process.ExitCode -ne 0) { throw "O inicializador instalado falhou: $($process.ExitCode)." }
+}
+try {
+  $PortBlocker.Start()
+  Invoke-InstalledLauncher
+  $stateFile = Join-Path $env:LOCALAPPDATA 'TranscrevoFacil\launcher-state.json'
+  $state = Get-Content -Raw -LiteralPath $stateFile | ConvertFrom-Json
+  $LauncherPort = [int]$state.port
+  if ($LauncherPort -eq 3000) { throw 'O inicializador usou a porta de outro programa.' }
+  $LauncherServerId = (Get-NetTCPConnection -State Listen -LocalPort $LauncherPort).OwningProcess
+  $health = Invoke-RestMethod "http://127.0.0.1:$LauncherPort/api/health" -TimeoutSec 3
+  if (-not $health.ok -or $health.app -ne 'transcrevofacil') { throw 'O atalho nao iniciou o aplicativo.' }
+  $PortBlocker.Stop()
+  Invoke-InstalledLauncher
+  $reopened = Get-Content -Raw -LiteralPath $stateFile | ConvertFrom-Json
+  if ($reopened.port -ne $LauncherPort) { throw 'A reabertura criou outra instancia ao liberar a porta 3000.' }
+  $reopenedId = (Get-NetTCPConnection -State Listen -LocalPort $LauncherPort).OwningProcess
+  if ($reopenedId -ne $LauncherServerId) { throw 'A reabertura substituiu o servidor ativo.' }
+} finally {
+  $PortBlocker.Stop()
+  if ($LauncherServerId) { Stop-Process -Id $LauncherServerId -Force -ErrorAction SilentlyContinue }
+}
+
 New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
 $Sentinel = Join-Path $DataRoot 'uninstall-preserves-user-data.txt'
 [System.IO.File]::WriteAllText($Sentinel, 'preservar', [System.Text.UTF8Encoding]::new($false))

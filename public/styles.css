@@ -65,6 +65,71 @@ h2 {
   line-height: 1.55;
 }
 
+.update-banner {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--brand);
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.07);
+}
+
+.update-text strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.update-text span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.update-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.18);
+}
+
+.update-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand);
+  transition: width 0.3s ease;
+}
+
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.update-actions button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.update-actions button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.update-actions a {
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 410px 1fr;
