@@ -1,5 +1,5 @@
 ﻿#define MyAppName "TranscrevoFácil"
-#define MyAppVersion "0.2.5"
+#define MyAppVersion "0.2.6"
 #define MyAppPublisher "TranscrevoFácil"
 #define MyAppExeName "scripts\start-transcrevofacil.ps1"
 
@@ -60,11 +60,11 @@ Source: "..\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion
 Source: "assets\*"; DestDir: "{app}\installer-assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; Description: "Abrir o TranscrevoFácil"; Flags: postinstall nowait skipifsilent
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; Description: "Abrir o TranscrevoFácil"; Flags: postinstall nowait skipifsilent
 
 [Icons]
-Name: "{group}\TranscrevoFácil"; Filename: "powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\public\transcrevofacil-logo.ico"
-Name: "{autodesktop}\TranscrevoFácil"; Filename: "powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\public\transcrevofacil-logo.ico"; Tasks: desktopicon
+Name: "{group}\TranscrevoFácil"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\public\transcrevofacil-logo.ico"
+Name: "{autodesktop}\TranscrevoFácil"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\scripts\start-transcrevofacil.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\public\transcrevofacil-logo.ico"; Tasks: desktopicon
 
 [UninstallDelete]
 ; runtime, .env, licenses e logs sao gerados por install-runtime.ps1 depois da copia do Inno,

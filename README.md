@@ -11,7 +11,8 @@ Transcrição local de áudio e vídeo com Whisper, sem consumir créditos de AP
 - AMD e Intel por Vulkan;
 - fallback automático para CPU quando a aceleração não está disponível;
 - precisão `float32` em CPU e CUDA para reduzir divergências;
-- instalador Windows com runtimes, modelos e dependências verificadas.
+- instalador Windows com runtimes, modelos e dependências verificadas;
+- detector de atualização que avisa quando há uma release nova e baixa o instalador conferindo o SHA-256.
 
 ## Instalação para usuário final
 
@@ -57,6 +58,16 @@ Copie `.env.example` para `.env` somente quando precisar alterar os padrões. Op
 - `FFMPEG_BIN`: caminho alternativo para `ffmpeg.exe`.
 
 `HOST` deve permanecer em `127.0.0.1`. Exposição em rede não é uma configuração suportada.
+
+## Atualizações
+
+A tela inicial avisa quando existe uma release mais nova que a versão instalada e permite baixar o instalador direto pelo aplicativo. O download é conferido contra o SHA-256 publicado no `SHA256SUMS.txt` da própria release e só é considerado válido se o hash bater; o arquivo fica em `<DATA_ROOT>\updates`. O aplicativo **não** executa o instalador sozinho — ele abre a pasta e quem instala é você.
+
+Esta é a única saída de rede do TranscrevoFácil: uma requisição `GET` sem autenticação à API pública de releases do GitHub, sem enviar nenhum dado do usuário nem identificador de instalação. Opções:
+
+- `UPDATE_CHECK`: `1` (padrão) verifica atualizações; `0` desliga a verificação e o aplicativo volta a não acessar a rede;
+- `UPDATE_REPOSITORY`: repositório consultado (padrão `yurimj/TranscrevoFacil`);
+- `UPDATE_CACHE_TTL_MS`: intervalo mínimo entre consultas (padrão 6 horas).
 
 ## GPU e consistência
 

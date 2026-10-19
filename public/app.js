@@ -25,6 +25,13 @@ const thumbnailOpenOriginal = document.querySelector('#thumbnailOpenOriginal');
 const thumbnailPrev = document.querySelector('#thumbnailPrev');
 const thumbnailNext = document.querySelector('#thumbnailNext');
 const thumbnailShowMore = document.querySelector('#thumbnailShowMore');
+const updateBanner = document.querySelector('#updateBanner');
+const updateTitle = document.querySelector('#updateTitle');
+const updateDetail = document.querySelector('#updateDetail');
+const updateNotes = document.querySelector('#updateNotes');
+const updateButton = document.querySelector('#updateButton');
+const updateProgress = document.querySelector('#updateProgress');
+const updateProgressBar = document.querySelector('#updateProgressBar');
 let currentThumbnails = [];
 let currentThumbnailIndex = 0;
 let currentJob = null;
@@ -39,6 +46,9 @@ let uploadLimitBytes = Infinity;
 let uploadLimitLabel = '';
 // Fonte da verdade do arquivo escolhido, tanto pelo seletor quanto por arrastar e soltar.
 let selectedFile = null;
+
+let latestUpdate = null;
+let downloadPollTimer = null;
 
 function formatDuration(seconds) {
   const parsedSeconds = Number(seconds);
@@ -460,4 +470,104 @@ framesOnlyButton.addEventListener('click', () => {
   processMedia('frames');
 });
 
+// ---------------------------------------------------------------------------
+// Detector de atualizacao
+// ---------------------------------------------------------------------------
+
+function showUpdateProgress(receivedBytes, totalBytes) {
+  updateProgress.hidden = false;
+  const percent = totalBytes > 0 ? Math.min(100, Math.round((receivedBytes / totalBytes) * 100)) : 0;
+  updateProgressBar.style.width = `${percent}%`;
+  return percent;
+}
+
+function renderDownloadState(download) {
+  if (!download || download.state === 'ocioso') return;
+  updateBanner.hidden = false;
+
+  if (download.state === 'baixando') {
+    const percent = showUpdateProgress(download.receivedBytes, download.totalBytes);
+    updateDetail.textContent = download.totalBytes
+      ? `Baixando ${download.fileName}: ${percent}% de ${formatFileSize(download.totalBytes)}.`
+      : `Baixando ${download.fileName}...`;
+    updateButton.disabled = true;
+    updateButton.textContent = 'Baixando...';
+    return;
+  }
+
+  if (download.state === 'concluido') {
+    showUpdateProgress(1, 1);
+    updateTitle.textContent = `Instalador ${download.version} pronto`;
+    updateDetail.textContent = 'Baixado e conferido pelo SHA-256 do release. Feche o TranscrevoFacil antes de instalar.';
+    updateButton.disabled = false;
+    updateButton.textContent = 'Abrir pasta do instalador';
+    updateButton.dataset.mode = 'reveal';
+    return;
+  }
+
+  if (download.state === 'falhou') {
+    updateProgress.hidden = true;
+    updateDetail.textContent = download.error || 'O download falhou.';
+    updateButton.disabled = false;
+    updateButton.textContent = 'Tentar de novo';
+    updateButton.dataset.mode = 'download';
+  }
+}
+
+function pollDownload() {
+  clearInterval(downloadPollTimer);
+  downloadPollTimer = setInterval(async () => {
+    try {
+      const response = await fetch('/api/update/download');
+      const download = await response.json();
+      renderDownloadState(download);
+      if (download.state !== 'baixando') clearInterval(downloadPollTimer);
+    } catch {
+      clearInterval(downloadPollTimer);
+    }
+  }, 1000);
+}
+
+updateButton.addEventListener('click', async () => {
+  if (updateButton.dataset.mode === 'reveal') {
+    await fetch('/api/update/reveal', { method: 'POST' }).catch(() => {});
+    return;
+  }
+
+  updateButton.disabled = true;
+  updateButton.textContent = 'Iniciando...';
+  try {
+    const response = await fetch('/api/update/download', { method: 'POST' });
+    const download = await response.json();
+    if (!response.ok) throw new Error(download.error || 'Nao consegui iniciar o download.');
+    renderDownloadState(download);
+    pollDownload();
+  } catch (error) {
+    updateDetail.textContent = error.message;
+    updateButton.disabled = false;
+    updateButton.textContent = 'Tentar de novo';
+  }
+});
+
+async function checkUpdate() {
+  const response = await fetch('/api/update');
+  const status = await response.json();
+  latestUpdate = status;
+  if (!status.enabled) return;
+
+  if (status.updateAvailable && status.asset) {
+    updateBanner.hidden = false;
+    updateButton.dataset.mode = 'download';
+    updateTitle.textContent = `Versao ${status.latestVersion} disponivel`;
+    updateDetail.textContent = `Voce esta na ${status.currentVersion}. O instalador tem ${formatFileSize(status.asset.size)}.`;
+    updateNotes.href = status.releaseUrl || '#';
+    updateNotes.hidden = !status.releaseUrl;
+  }
+
+  // Um download em andamento (ou ja concluido) reaparece mesmo se a pagina for recarregada.
+  renderDownloadState(status.download);
+  if (status.download && status.download.state === 'baixando') pollDownload();
+}
+
 checkHealth().catch(() => {});
+checkUpdate().catch(() => {});

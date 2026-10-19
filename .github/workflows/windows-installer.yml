@@ -2,6 +2,15 @@ name: Gerar instalador Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_run_id:
+        description: 'Publicar o artefato de um build aprovado (vazio gera novo build)'
+        required: false
+        type: string
+      publish_tag:
+        description: 'Tag da pre-release em rascunho para publicar o artefato'
+        required: false
+        type: string
   push:
     tags:
       - 'v*'
@@ -14,7 +23,62 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  publish-existing:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PUBLISH_RUN_ID: ${{ inputs.publish_run_id }}
+      PUBLISH_TAG: ${{ inputs.publish_tag }}
+    steps:
+      - name: Conferir e publicar o instalador ja validado
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($env:PUBLISH_RUN_ID -notmatch '^\d+$' -or $env:PUBLISH_TAG -notmatch '^v\d+\.\d+\.\d+$') {
+            throw 'Informe o ID do build e uma tag vMAJOR.MINOR.PATCH.'
+          }
+          $build = gh api "repos/$env:GH_REPO/actions/runs/$env:PUBLISH_RUN_ID" | ConvertFrom-Json
+          if ($build.conclusion -ne 'success' -or $build.status -ne 'completed' -or $build.head_branch -ne $env:PUBLISH_TAG -or $build.path -ne '.github/workflows/windows-installer.yml') {
+            throw 'O build informado nao e um build aprovado desta tag e deste workflow.'
+          }
+          $ref = gh api "repos/$env:GH_REPO/git/ref/tags/$env:PUBLISH_TAG" | ConvertFrom-Json
+          $source = $ref.object.sha
+          if ($ref.object.type -eq 'tag') {
+            $annotation = gh api "repos/$env:GH_REPO/git/tags/$source" | ConvertFrom-Json
+            $source = $annotation.object.sha
+          }
+          if ($source -ne $build.head_sha) { throw 'O commit da tag difere do build.' }
+          $release = gh release view $env:PUBLISH_TAG --json isDraft,isPrerelease | ConvertFrom-Json
+          if (-not $release.isDraft -or -not $release.isPrerelease) { throw 'A publicacao exige uma pre-release em rascunho.' }
+          gh run download $env:PUBLISH_RUN_ID --name TranscrevoFacil-Windows-Setup --dir release-files
+          $name = 'TranscrevoFacil-Setup-' + $env:PUBLISH_TAG.Substring(1) + '.exe'
+          $installer = Get-Item -LiteralPath (Join-Path 'release-files' $name)
+          $checksum = @(Get-Content release-files/SHA256SUMS.txt | Where-Object { $_ -match ('^([a-fA-F0-9]{64})\s+\*?' + [regex]::Escape($name) + '$') })
+          if ($checksum.Count -ne 1) { throw 'Checksum do instalador ausente ou ambiguo.' }
+          $expected = ($checksum[0] -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw 'SHA-256 do instalador divergente.' }
+          $provenance = @{
+            repository = $env:GH_REPO; tag = $env:PUBLISH_TAG; sourceCommit = $source
+            buildRun = $build.html_url; buildConclusion = $build.conclusion
+            installer = $name; size = $installer.Length; sha256 = $actual
+            publisherRun = "https://github.com/$env:GH_REPO/actions/runs/$env:GITHUB_RUN_ID"
+            signature = 'unsigned-test-build'
+          }
+          $provenance | ConvertTo-Json | Set-Content release-files/BUILD-PROVENANCE.json -Encoding utf8
+          $assets = @($installer.FullName, 'release-files/SHA256SUMS.txt', 'release-files/LICENSE', 'release-files/THIRD_PARTY_NOTICES.md', 'release-files/BUILD-PROVENANCE.json')
+          gh release upload $env:PUBLISH_TAG @assets
+          gh release edit $env:PUBLISH_TAG --draft=false --prerelease --latest=false
+
   installer:
+    if: github.event_name != 'workflow_dispatch' || inputs.publish_run_id == ''
     runs-on: windows-2025
     timeout-minutes: 120
     env:
